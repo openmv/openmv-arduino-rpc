@@ -101,14 +101,14 @@ bool RPC::register_callback(int rpc_id, RPC_CALLBACK *pfnCB)
     if (_rpc_count >= MAX_CALLBACKS) // out of space to save this
         return false;
     _rpcList[_rpc_count].id = rpc_id;
-    _rpcList[_rpc_count].pfnCallback = pfnCB:
+    _rpcList[_rpc_count].pfnCallback = pfnCB;
     _rpc_count++; 
     return true;
 } /* register_callback() */
 //
 // Make a remote function call
 //
-bool RPC::call(int rpc_id, uint8_t *out_data, uint32_t out_data_len, uint8_t *in_data, uint32_t *in_data_len, int send_timeout, int recv_timeout);
+bool RPC::call(int rpc_id, uint8_t *out_data, uint32_t out_data_len, uint8_t *in_data, uint32_t *in_data_len, int send_timeout, int recv_timeout)
 {
 bool rc = false;
 
@@ -146,12 +146,12 @@ bool RPC::_put_command(int cmd, uint8_t *data, uint32_t data_len, int timeout)
 unsigned long start, end;
 bool rc = false;
 uint8_t ucTemp[8];
-uint32_t *uiTemp = (unsigned int)ucTemp;
+uint32_t *uiTemp = (uint32_t *)ucTemp;
 
     start = millis();
     end = start + timeout;
     while (millis() < end) {
-        uiTemp[0] = command; uiTemp[1] = data_len; 
+        uiTemp[0] = cmd; uiTemp[1] = data_len; 
         _put_packet(__COMMAND_HEADER_PACKET_MAGIC, ucTemp, 8, 10);
         if (_get_packet(__COMMAND_HEADER_PACKET_MAGIC, ucTemp, 0, 20)) { 
             _put_packet(__COMMAND_DATA_PACKET_MAGIC, data, data_len, 5000);
@@ -191,14 +191,14 @@ uint32_t len;
 bool RPC::_get_packet(uint16_t magic_value, uint8_t *payload, uint32_t payload_len, int timeout)
 {
 bool rc = false;
-uint32_t len = payload_len + 4;
+unsigned long end;
+uint32_t i, len = payload_len + 4;
 uint16_t crc, in_magic, in_crc;
 
-    start = millis();
-    end = start + timeout;
-    while (!rc) {
+    end = millis() + timeout;
+    while (millis() < end && !rc) {
         // Confirm the packet has the right length, magic number and CRC
-        if (_get_bytes(payload, len, tiemout) { // got the length requested
+        if (_get_bytes(payload, len, timeout)) { // got the length requested
             in_magic = payload[0] | (payload[1] << 8);
             crc = _crc16(payload, len-2);
             in_crc = payload[len-2] | (payload[len-1] << 8);
@@ -211,13 +211,14 @@ uint16_t crc, in_magic, in_crc;
     if (rc) { // success, remove the magic value from the packet
         for (i=0; i<len-2; i++) {
             payload[i] = payload[i+2];
+        }
     }
 return rc;
 } /* _get_packet() */
 //
 // Receive bytes (either master or slave)
 //
-bool _get_bytes(uint8_t *data, uint32_t len, int timeout)
+bool RPC::_get_bytes(uint8_t *data, uint32_t len, int timeout)
 {
 unsigned long end;
 bool rc = false;
@@ -226,26 +227,26 @@ uint32_t i = 0;
     end = millis() + timeout;
 
     switch (_comm_type) {
-        case COMM_I2C:
+        case RPC_I2C:
             Wire.requestFrom(I2C_ADDR, len);
             while (millis() < end && i < len && Wire.available()) {
                 data[i++] = Wire.read();
             }
             break;
-        case COMM_UART:
+        case RPC_UART:
             while (millis() < end && i < len) {
                 data[i++] = Serial.read();
             }
             break;
-        case COMM_SOFTUART:
+        case RPC_SOFTUART:
             while (millis() < end && i < len) {
                 data[i++] = _sserial->read();
             }
             break;
-        case COMM_SPI:
+        case RPC_SPI:
             SPI.beginTransaction(SPISettings(_speed, MSBFIRST, SPI_MODE0));
             while (millis() < end && i < len) {
-                data[i]++ = SPI.transfer(0);
+                data[i++] = SPI.transfer(0);
             }
             SPI.endTransaction();
             break;
@@ -256,7 +257,7 @@ uint32_t i = 0;
 //
 // Send bytes (either master or slave)
 //
-bool _put_bytes(uint8_t *data, uint32_t data_len, int timeout)
+bool RPC::_put_bytes(uint8_t *data, uint32_t data_len, int timeout)
 {
 unsigned long end;
 bool rc = false;
@@ -264,22 +265,22 @@ bool rc = false;
     end = millis() + timeout;
     while (!rc && millis() < end) { 
         switch (_comm_type) {
-            case COMM_I2C:
+            case RPC_I2C:
                Wire.beginTransmission(I2C_ADDR);
-               Wire.write(ucTemp, len);
+               Wire.write(data, data_len);
                rc = !Wire.endTransmission();
                break;
-            case COMM_UART:
-               Serial.write(ucTemp, len);
+            case RPC_UART:
+               Serial.write(data, data_len);
                rc = true;
                break;
-            case COMM_SOFTUART:
-               _sserial->write(ucTemp, len);
+            case RPC_SOFTUART:
+               _sserial->write(data, data_len);
                rc = true;
                break;
-            case COMM_SPI:
+            case RPC_SPI:
                SPI.beginTransaction(SPISettings(_speed, MSBFIRST, SPI_MODE0));
-               SPI.transfer(ucTemp, len);
+               SPI.transfer(data, data_len);
                SPI.endTransaction();
                rc = true;
                break;
@@ -318,21 +319,20 @@ return rc;
 //
 // Wait to receive a command from the master
 //
-uint32_t get_command(uint8_t *data, uint32_t *data_len)
+uint32_t RPC::get_command(uint8_t *data, uint32_t *data_len)
 {
 unsigned long end;
-uint16_t crc;
 uint32_t len = 0, cmd = 0;
 uint8_t ucTemp[MIN_PACKET_SIZE];
 
     end = millis() + 100;
     while (millis() < end && cmd != 0) {
-        if (_get_packet(__COMMAND_HEADER_PACKET_MAGIC, data, 8)) {
+        if (_get_packet(__COMMAND_HEADER_PACKET_MAGIC, data, 8, 10)) {
             cmd = *(uint32_t *)&data[0];
             len = *(uint32_t *)&data[4];
-            _put_packet(__COMMAND_HEADER_PACKET_MAGIC, data, 0); // send ack
+            _put_packet(__COMMAND_HEADER_PACKET_MAGIC, data, 0, 10); // send ack
             if (_get_packet(__COMMAND_DATA_PACKET_MAGIC, data, len, 5000)) {
-                _put_packet(__COMMAND_DATA_PACKET_MAGIC, ucTemp, 0); // send ack
+                _put_packet(__COMMAND_DATA_PACKET_MAGIC, ucTemp, 0, 10); // send ack
             } else { // something went wrong, nullify it
                 cmd = len = 0;
             }
@@ -345,7 +345,7 @@ uint8_t ucTemp[MIN_PACKET_SIZE];
 //
 // Send the master the result of the last command
 //
-void put_result(uint8_t *data, uint32_t data_len)
+void RPC::put_result(uint8_t *data, uint32_t data_len)
 {
 bool done = false;
 unsigned long end;

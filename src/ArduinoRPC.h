@@ -67,7 +67,7 @@ class RPC
 
   private:
     uint16_t _crc16(uint8_t *data, uint32_t len);
-    bool _get_packet(uint16_t magic_value, uint8_t *data, uint32_t *data_len, int timeout);
+    bool _get_packet(uint16_t magic_value, uint8_t *data, uint32_t data_len, int timeout);
     bool _put_packet(uint16_t magic_value, uint8_t *data, uint32_t data_len, int timeout);
     bool _put_command(int cmd, uint8_t *data, uint32_t data_len, int timeout);
     bool _get_result(uint8_t *data, uint32_t *data_len, int timeout);
