@@ -108,7 +108,7 @@ bool RPC::register_callback(int rpc_id, RPC_CALLBACK *pfnCB)
 //
 // Make a remote function call
 //
-bool RPC::call(int rpc_id, uint8_t *out_data, int out_data_len, uint8_t *in_data, int *in_data_len, int send_timeout, int recv_timeout);
+bool RPC::call(int rpc_id, uint8_t *out_data, uint32_t out_data_len, uint8_t *in_data, uint32_t *in_data_len, int send_timeout, int recv_timeout);
 {
 bool rc = false;
 
@@ -125,12 +125,12 @@ bool rc = false;
 //
 // Calculate a 16-bit CRC value for a set of data bytes
 //
-uint16_t  RPC::_crc16(uint8_t *data, int len)
+uint16_t  RPC::_crc16(uint8_t *data, uint32_t len)
 {
 uint8_t * d = data;
 uint16_t crc = 0xFFFF;
 
-    for(int i=0; i<len; i++) {
+    for(uint32_t i=0; i<len; i++) {
         crc ^= (d[i] << 8);
         for(int j=0; j<8; j++) {
             crc = (crc << 1);
@@ -141,7 +141,7 @@ uint16_t crc = 0xFFFF;
     return crc;
 } /* _crc16() */
 
-bool RPC::_put_command(int cmd, uint8_t *data, int data_len, int timeout)
+bool RPC::_put_command(int cmd, uint8_t *data, uint32_t data_len, int timeout)
 {
 unsigned long start, end;
 bool rc = false;
@@ -162,7 +162,7 @@ uint32_t *uiTemp = (unsigned int)ucTemp;
     return rc;
 } /* _put_command() */
 
-bool RPC::_get_result(uint8_t *data, int *data_len, int timeout)
+bool RPC::_get_result(uint8_t *data, uint32_t *data_len, int timeout)
 {
 unsigned long start, end;
 bool rc = false;
@@ -188,44 +188,17 @@ uint32_t len;
 // Receive a packet from a RPC device
 // returns the number of bytes received
 //
-bool RPC::_get_packet(uint16_t magic_value, uint8_t *payload, int payload_len, int timeout)
+bool RPC::_get_packet(uint16_t magic_value, uint8_t *payload, uint32_t payload_len, int timeout)
 {
-unsigned long start, end;
 bool rc = false;
-int i=0, len = payload_len + 4;
+uint32_t len = payload_len + 4;
 uint16_t crc, in_magic, in_crc;
 
     start = millis();
     end = start + timeout;
     while (!rc) {
-        switch (_comm_type) {
-            case COMM_I2C:
-                Wire.requestFrom(I2C_ADDR, len);
-                while (millis() < end && i < len && Wire.available()) {
-                    payload[i++] = Wire.read();
-                }
-                break;
-            case COMM_UART:
-                while (millis() < end && i < len) {
-                    payload[i++] = Serial.read();
-                }
-                break;
-            case COMM_SOFTUART:
-                while (millis() < end && i < len) {
-                    payload[i++] = _sserial->read();
-                }
-                break;
-            case COMM_SPI:
-                SPI.beginTransaction(SPISettings(_speed, MSBFIRST, SPI_MODE0));
-                while (millis() < end && i < len) {
-                    payload[i]++ = SPI.transfer(0);
-                }
-                SPI.endTransaction();
-                break;
-        } // switch on comm type
-
         // Confirm the packet has the right length, magic number and CRC
-        if (i == len) { // got what we requested
+        if (_get_bytes(payload, len, tiemout) { // got the length requested
             in_magic = payload[0] | (payload[1] << 8);
             crc = _crc16(payload, len-2);
             in_crc = payload[len-2] | (payload[len-1] << 8);
@@ -242,30 +215,54 @@ uint16_t crc, in_magic, in_crc;
 return rc;
 } /* _get_packet() */
 //
-// Send a package to a RPC device
+// Receive bytes (either master or slave)
 //
-bool RPC::_put_packet(uint16_t magic_value, uint8_t *data, int data_len, int timeout)
+bool _get_bytes(uint8_t *data, uint32_t len, int timeout)
 {
-unsigned long start, end;
+unsigned long end;
 bool rc = false;
-uint16_t crc;
-int len = 2;
-uint8_t ucTemp[MAX_LOCAL_BUFFER]; // this limits the amount of data we can send
+uint32_t i = 0;
 
+    end = millis() + timeout;
 
-// It's best to combine all of the bytes we're going to transmit into a single
-// buffer so that they can be sent in a single comm transaction
+    switch (_comm_type) {
+        case COMM_I2C:
+            Wire.requestFrom(I2C_ADDR, len);
+            while (millis() < end && i < len && Wire.available()) {
+                data[i++] = Wire.read();
+            }
+            break;
+        case COMM_UART:
+            while (millis() < end && i < len) {
+                data[i++] = Serial.read();
+            }
+            break;
+        case COMM_SOFTUART:
+            while (millis() < end && i < len) {
+                data[i++] = _sserial->read();
+            }
+            break;
+        case COMM_SPI:
+            SPI.beginTransaction(SPISettings(_speed, MSBFIRST, SPI_MODE0));
+            while (millis() < end && i < len) {
+                data[i]++ = SPI.transfer(0);
+            }
+            SPI.endTransaction();
+            break;
+    } // switch on comm type
+    rc = (i == len);
+    return rc;
+} /* _get_bytes() */
+//
+// Send bytes (either master or slave)
+//
+bool _put_bytes(uint8_t *data, uint32_t data_len, int timeout)
+{
+unsigned long end;
+bool rc = false;
 
-    *(uint16_t *)ucTemp = magic_value; // start with 2 bytes of magic value
-    memcpy(&ucTemp[len], data, data_len);
-    len += data_len;
-    crc = _crc16(ucTemp, len);
-    ucTemp[len++] = (uint8_t)crc;
-    ucTemp[len++] = (uint8_t)(crc >> 8);
-
-    start = millis();
-    end = start + timeout;
-    while (millis() < end) {
+    end = millis() + timeout;
+    while (!rc && millis() < end) { 
         switch (_comm_type) {
             case COMM_I2C:
                Wire.beginTransmission(I2C_ADDR);
@@ -286,8 +283,84 @@ uint8_t ucTemp[MAX_LOCAL_BUFFER]; // this limits the amount of data we can send
                SPI.endTransaction();
                rc = true;
                break;
-        }
-    } // while not timeout
+        } // switch
+    } // while waiting for timeout
+
+    return rc;
+} /* _put_bytes() */
+
+//
+// Send a package to a RPC device
+//
+bool RPC::_put_packet(uint16_t magic_value, uint8_t *data, uint32_t data_len, int timeout)
+{
+bool rc = false;
+uint16_t crc;
+uint32_t len = 2;
+uint8_t ucTemp[MAX_LOCAL_BUFFER]; // this limits the amount of data we can send
+
+
+// It's best to combine all of the bytes we're going to transmit into a single
+// buffer so that they can be sent in a single comm transaction
+
+    *(uint16_t *)ucTemp = magic_value; // start with 2 bytes of magic value
+    memcpy(&ucTemp[len], data, data_len);
+    len += data_len;
+    crc = _crc16(ucTemp, len);
+    ucTemp[len++] = (uint8_t)crc;
+    ucTemp[len++] = (uint8_t)(crc >> 8);
+    rc = _put_bytes(ucTemp, len, timeout);
+
 return rc;
 } /* _put_packet() */
 
+// For RPC Slave
+//
+// Wait to receive a command from the master
+//
+uint32_t get_command(uint8_t *data, uint32_t *data_len)
+{
+unsigned long end;
+uint16_t crc;
+uint32_t len = 0, cmd = 0;
+uint8_t ucTemp[MIN_PACKET_SIZE];
+
+    end = millis() + 100;
+    while (millis() < end && cmd != 0) {
+        if (_get_packet(__COMMAND_HEADER_PACKET_MAGIC, data, 8)) {
+            cmd = *(uint32_t *)&data[0];
+            len = *(uint32_t *)&data[4];
+            _put_packet(__COMMAND_HEADER_PACKET_MAGIC, data, 0); // send ack
+            if (_get_packet(__COMMAND_DATA_PACKET_MAGIC, data, len, 5000)) {
+                _put_packet(__COMMAND_DATA_PACKET_MAGIC, ucTemp, 0); // send ack
+            } else { // something went wrong, nullify it
+                cmd = len = 0;
+            }
+        }
+    } // while waiting for incoming data
+    *data_len = len;
+    return cmd;
+} /* get_command() */
+
+//
+// Send the master the result of the last command
+//
+void put_result(uint8_t *data, uint32_t data_len)
+{
+bool done = false;
+unsigned long end;
+uint8_t ucTemp[MIN_PACKET_SIZE];
+
+    end = millis() + 100;
+    while (millis() < end && !done) {
+        if (_get_packet(__RESULT_HEADER_PACKET_MAGIC, ucTemp, 0, 10)) {
+            *(uint32_t *)ucTemp = data_len;
+            // send length first as ack
+            _put_packet(__RESULT_HEADER_PACKET_MAGIC, ucTemp, 4, 10);
+            if (_get_packet(__RESULT_DATA_PACKET_MAGIC, ucTemp, 0, 10)) {
+                _put_packet(__RESULT_DATA_PACKET_MAGIC, data, data_len, 5000);
+                done = true;
+            }
+        }
+    } // while not finished or not timed out
+} /* put_result() */
