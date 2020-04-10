@@ -35,7 +35,7 @@ const uint16_t __RESULT_DATA_PACKET_MAGIC = 0x1DBA;
 #define I2C_ADDR 0x12
 
 // Callback function prototype
-typedef void (RPC_CALLBACK)(int iEvent, uint8_t *data, uint32_t data_len);
+typedef uint32_t (RPC_CALLBACK)(int iEvent, uint8_t *data, uint32_t data_len);
 
 typedef struct tagrpclist
 {
@@ -63,6 +63,7 @@ class RPC
     bool call(int rpc_id, uint8_t *out_data, uint32_t out_data_len, uint8_t *in_data, uint32_t *in_data_len, int send_timeout, int recv_timeout);
 // for Slave
     uint32_t get_command(uint8_t *data, uint32_t *data_len);
+    RPC_CALLBACK *find_callback(uint32_t rpc_id);
     void put_result(uint8_t *data, uint32_t data_len);
 
   private:

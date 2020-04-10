@@ -106,6 +106,20 @@ bool RPC::register_callback(int rpc_id, RPC_CALLBACK *pfnCB)
     return true;
 } /* register_callback() */
 //
+// Match the command id to the registered callback function
+// returns NULL if none found
+//
+RPC_CALLBACK *find_callback(uint32_t rpc_id)
+{
+int i;
+  for (i=0; i<_rpc_count; i++) {
+    if (rpc_id == _rpcList[i].id)
+      return _rpcList[i].pfnCallback;
+  }
+  return NULL;
+} /* find_callback() */
+
+//
 // Make a remote function call
 //
 bool RPC::call(int rpc_id, uint8_t *out_data, uint32_t out_data_len, uint8_t *in_data, uint32_t *in_data_len, int send_timeout, int recv_timeout)
