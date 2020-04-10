@@ -9,10 +9,10 @@
 #include <Arduino.h>
 #include <SoftwareSerial.h>
 
-const uint8_t __COMMAND_HEADER_PACKET_MAGIC[] = {0x09, 0x12}; // 0x1209
-const uint8_t __COMMAND_DATA_PACKET_MAGIC[] = {0xd1, 0xab}; // 0xABD1
-const uint8_t __RESULT_HEADER_PACKET_MAGIC[] = {0x21, 0x90}; // 0x9021
-const uint8_t __RESULT_DATA_PACKET_MAGIC[] = {0xba, 0x1d}; // 0x1DBA
+const uint16_t __COMMAND_HEADER_PACKET_MAGIC = 0x1209;
+const uint16_t __COMMAND_DATA_PACKET_MAGIC = 0xABD1;
+const uint16_t __RESULT_HEADER_PACKET_MAGIC = 0x9021;
+const uint16_t __RESULT_DATA_PACKET_MAGIC = 0x1DBA;
 
 //
 // The list of registered callback functions for remote procedure calls
@@ -23,9 +23,13 @@ const uint8_t __RESULT_DATA_PACKET_MAGIC[] = {0xba, 0x1d}; // 0x1DBA
 //
 #ifdef __AVR__
 #define MAX_CALLBACKS 16
+#define MAX_LOCAL_BUFFER 32
 #else
 #define MAX_CALLBACKS 32
+#define MAX_LOCAL_BUFFER 256
 #endif
+
+#define I2C_ADDR 0x12
 
 // Callback function prototype
 typedef void (RPC_CALLBACK)(int iEvent, uint8_t *data, int data_len);
