@@ -1,7 +1,10 @@
-/* Arduino RPC (Remote Procedure Call) library
-   Copyright (c) 2020 OpenMV
-   written by Kwabena Agyeman and Larry Bank
-*/
+//
+// Arduino RPC (Remote Procedure Call) library
+// Copyright (c) 2020 OpenMV
+// written by Kwabena Agyeman and Larry Bank
+//
+// project started April, 2020
+//
 
 #include <ArduinoRPC.h>
 #include <SoftwareSerial.h>
@@ -34,7 +37,7 @@
 //
 
 //
-// Initialize the RPC class
+// Initialize the RPC class (default bus/port)
 // returns false if passed invalid parameters
 // true if initialized correctly
 //
@@ -63,7 +66,11 @@ bool rc = false;
     }
     return rc;
 } /* begin() */
-
+//
+// Initialize the RPC Class (specific port/pins)
+// For I2C, pin1 = SDA, pin2 = SCL
+// for UART, pin1 = TX, pin2 = RX
+// 
 bool RPC::begin(int comm_type, unsigned long speed, int pin1=-1, int pin2=-1)
 {
 bool rc = false;
@@ -81,7 +88,7 @@ bool rc = false;
            rc = true;
            break;
 #endif
-        case RPC_UART: // if pins are specified, use the SoftwareSerial library instead of the hardware
+        case RPC_UART: // Since pins are specified, use the SoftwareSerial library instead of the hardware
            comm_type = RPC_SOFTUART;
            _sserial = new SoftwareSerial(pin1, pin2);
            _sserial->begin(speed);
@@ -95,6 +102,8 @@ bool rc = false;
 // Register the callback function for the specific remote procedure
 // returns false if memory has been exhausted
 // or true for success
+//
+// This is used on the Slave side to manage execution of incoming commands
 //
 bool RPC::register_callback(int rpc_id, RPC_CALLBACK *pfnCB)
 {
@@ -121,6 +130,8 @@ int i;
 
 //
 // Make a remote function call
+// 
+// Used by the Master side to direct the Slave to execute a command
 //
 bool RPC::call(int rpc_id, uint8_t *out_data, uint32_t out_data_len, uint8_t *in_data, uint32_t *in_data_len, int send_timeout, int recv_timeout)
 {
@@ -133,11 +144,11 @@ bool rc = false;
 } /* call() */
 
 //
-// Protected methods
+// Private methods
 //
 
 //
-// Calculate a 16-bit CRC value for a set of data bytes
+// Calculate a 16-bit CRC value for a stream of data bytes
 //
 uint16_t  RPC::_crc16(uint8_t *data, uint32_t len)
 {
@@ -154,7 +165,9 @@ uint16_t crc = 0xFFFF;
     } // for i
     return crc;
 } /* _crc16() */
-
+//
+// Construct and send a command packet from Master to Slave
+//
 bool RPC::_put_command(int cmd, uint8_t *data, uint32_t data_len, int timeout)
 {
 unsigned long start, end;
@@ -175,7 +188,9 @@ uint32_t *uiTemp = (uint32_t *)ucTemp;
     } // while waiting for main timeout
     return rc;
 } /* _put_command() */
-
+//
+// Read the resulting data from a command (Master calls to get from Slave)
+//
 bool RPC::_get_result(uint8_t *data, uint32_t *data_len, int timeout)
 {
 unsigned long start, end;
@@ -200,7 +215,9 @@ uint32_t len;
 
 //
 // Receive a packet from a RPC device
-// returns the number of bytes received
+// Confirms matching magic value and calculated CRC
+//
+// returns true if the data was received + the magic value and crc match
 //
 bool RPC::_get_packet(uint16_t magic_value, uint8_t *payload, uint32_t payload_len, int timeout)
 {
@@ -232,6 +249,8 @@ return rc;
 //
 // Receive bytes (either master or slave)
 //
+// Lowest level data reception - reads raw bytes from the chosen channel
+..
 bool RPC::_get_bytes(uint8_t *data, uint32_t len, int timeout)
 {
 unsigned long end;
@@ -271,6 +290,8 @@ uint32_t i = 0;
 //
 // Send bytes (either master or slave)
 //
+// Lowest level data transmission - sends bytes to the chosen channel
+//
 bool RPC::_put_bytes(uint8_t *data, uint32_t data_len, int timeout)
 {
 unsigned long end;
@@ -305,7 +326,12 @@ bool rc = false;
 } /* _put_bytes() */
 
 //
-// Send a package to a RPC device
+// Send a packet to a RPC device
+//
+// Generates a crc value for the given data, repacks it into a homogenous
+// buffer and then transmits it in a single transaction
+//
+// returns true if the transmission succeeds
 //
 bool RPC::_put_packet(uint16_t magic_value, uint8_t *data, uint32_t data_len, int timeout)
 {
