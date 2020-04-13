@@ -71,6 +71,46 @@ enum
   RPC_USB  // VCP - virtual comm port on USB
 };
 
+class rpc_comm	//base class
+{
+  public:
+    bool get_bytes(uint8_t *data, uint32_t len, int timeout);
+    bool put_bytes(uint8_t *data, uint32_t data_len, int timeout);
+};
+
+//
+// Derived classes of rpc_comm for different communication types
+//
+class rpc_i2c : public rpc_comm
+{
+  public:
+    bool init(int iAddr, unsigned long speed); 
+  private:
+    int _iAddr;
+};
+
+class rpc_uart : public rpc_comm
+{
+  public:
+    bool init(unsigned long speed);
+};
+
+class rpc_softuart : public rpc_comm
+{
+  public:
+    bool init(int pin1, int pin2, unsigned long speed);
+  private:
+    SoftwareSerial *_sserial;
+};
+
+class rpc_spi : public rpc_comm
+{
+  public:
+    bool init(unsigned long speed);
+  private:
+    unsigned long _speed;
+}; 
+
 class RPC
 {
   public:
@@ -81,7 +121,7 @@ class RPC
     bool call(int rpc_id, uint8_t *out_data, uint32_t out_data_len, uint8_t *in_data, uint32_t *in_data_len, int send_timeout, int recv_timeout);
 // for Slave
     uint32_t get_command(uint8_t *data, uint32_t *data_len);
-    RPC_CALLBACK *find_callback(uint32_t rpc_id);
+    RPC_CALLBACK *find_callback(int rpc_id);
     void put_result(uint8_t *data, uint32_t data_len);
 
   private:
@@ -92,11 +132,8 @@ class RPC
     bool _get_result(uint8_t *data, uint32_t *data_len, int timeout);
     bool _get_bytes(uint8_t *data, uint32_t len, int timeout);
     bool _put_bytes(uint8_t *data, uint32_t data_len, int timeout);
-
-    int _comm_type; // communication method (e.g. UART/I2C/SPI/USB/CAN)
-    unsigned long _speed; // baud/bit rate
-    int _pin1, _pin2; // optional pins to specify the comm bus
-    SoftwareSerial *_sserial;
+ 
+    rpc_comm *_pCom;
     RPCLIST _rpcList[MAX_CALLBACKS]; // list of registered callbacks
     int _rpc_count; // number of registered callback functions
 };

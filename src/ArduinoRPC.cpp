@@ -36,6 +36,114 @@
 // Public methods
 //
 
+bool rpc_i2c::init(int iAddr, unsigned long speed)
+{
+    _iAddr = iAddr;
+    Wire.begin();
+    Wire.setClock(speed);
+    return true;
+
+} /* rpc_i2c::init() */
+
+bool rpc_i2c::get_bytes(uint8_t *data, uint32_t len, int timeout)
+{
+unsigned long end = millis() + timeout;
+int i = 0;
+    
+    Wire.requestFrom(_iAddr, len);
+    while (millis() < end && i < len && Wire.available()) {
+        data[i++] = Wire.read();
+    }
+    
+    return (i == len);
+} /* rpc_i2c::get_bytes() */
+
+bool rpc_i2c::put_bytes(uint8_t *data, uint32_t data_len, int timeout)
+{
+    Wire.beginTransmission(_iAddr);
+    Wire.write(data, data_len);
+    return !Wire.endTransmission();
+
+} /* rpc_i2c::put_bytes() */
+
+bool rpc_spi::init(unsigned long speed)
+{
+    _speed = speed;
+    SPI.begin();
+    return true;
+
+} /* rpc_spi::init() */
+
+bool rpc_spi::get_bytes(uint8_t *data, uint32_t len, int timeout)
+{
+int i;
+unsigned long end = millis() + timeout;
+    
+    SPI.beginTransaction(SPISettings(_speed, MSBFIRST, SPI_MODE0));
+    while (millis() < end && i < len) {
+        data[i++] = SPI.transfer(0);
+    }
+    SPI.endTransaction();
+    return (i == len);
+} /* rpc_spi::get_bytes() */
+
+bool rpc_spi::put_bytes(uint8_t *data, uint32_t data_len, int timeout)
+{
+    SPI.beginTransaction(SPISettings(_speed, MSBFIRST, SPI_MODE0));
+    SPI.transfer(data, data_len);
+    SPI.endTransaction();
+    return false;
+} /* rpc_spi::put_bytes() */
+
+bool rpc_uart::init(unsigned long speed)
+{
+    Serial.begin(speed);
+    return true;
+
+} /* rpc_uart::init() */
+
+bool rpc_uart::get_bytes(uint8_t *data, uint32_t len, int timeout)
+{
+int i = 0;
+unsigned long end = millis() + timeout;
+    
+    while (millis() < end && i < len) {
+        data[i++] = Serial.read();
+    }
+    return (i == len);
+} /* rpc_uart::get_bytes() */
+
+bool rpc_uart::put_bytes(uint8_t *data, uint32_t data_len, int timeout)
+{
+    Serial.write(data, data_len);
+    return true;
+} /* rpc_uart::put_bytes() */
+
+bool rpc_softuart::init(int pin1, int pin2, unsigned long speed)
+{
+    _sserial = new SoftwareSerial(pin1, pin2);
+    _sserial->begin(speed);
+    return true;
+
+} /* rpc_softuart::init() */
+
+bool rpc_softuart::get_bytes(uint8_t *data, uint32_t len, int timeout)
+{
+int i = 0;
+unsigned long end = millis() + timeout;
+    
+    while (millis() < end && i < len) {
+        data[i++] = _sserial->read();
+    }
+    return (i == len);
+} /* rpc_softuart::get_bytes() */
+
+bool rpc_softuart::put_bytes(uint8_t *data, uint32_t data_len, int timeout)
+{
+    _sserial->write(data, data_len);
+    return true;
+} /* rpc_softuart::put_bytes() */
+
 //
 // Initialize the RPC class (default bus/port)
 // returns false if passed invalid parameters
@@ -45,23 +153,20 @@ bool RPC::begin(int comm_type, unsigned long speed)
 {
 bool rc = false;
 
-    _comm_type = comm_type;
-    _speed = speed;
     switch (comm_type) {
         case RPC_I2C:
-           Wire.begin();
-           Wire.setClock(speed);
-           rc = true;
+           _pCom = new rpc_i2c();
+           rc = _pCom->init(I2C_ADDR, speed);
            break;
 
         case RPC_SPI:
-           SPI.begin();
-           rc = true;
+           _pCom = new rpc_spi();
+           _pCom->init(speed);
            break;
 
         case RPC_UART:
-           Serial.begin(speed);
-           rc = true;
+           _pCom = new rpc_uart();
+           rc = _pCom->init(speed);
            break;
     }
     return rc;
@@ -75,25 +180,9 @@ bool RPC::begin(int comm_type, unsigned long speed, int pin1=-1, int pin2=-1)
 {
 bool rc = false;
 
-    _comm_type = comm_type;
-    _speed = speed;
-    _pin1 = pin1;
-    _pin2 = pin2;
-
-    switch (comm_type) {
-#if !defined( __AVR__ ) && !defined( NRF52 )
-        case RPC_I2C:
-           Wire.begin(pin1, pin2);
-           Wire.setClock(speed);
-           rc = true;
-           break;
-#endif
-        case RPC_UART: // Since pins are specified, use the SoftwareSerial library instead of the hardware
-           comm_type = RPC_SOFTUART;
-           _sserial = new SoftwareSerial(pin1, pin2);
-           _sserial->begin(speed);
-           rc = true;
-           break;
+    if (comm_type == RPC_UART || comm_type == RPC_SOFTUART) { // Since pins are specified, use the SoftwareSerial library instead of the hardware
+        _pCom = new rpc_softuart();
+        _pCom->init(pin1, pin2, speed);
     }
     return rc;
 
@@ -118,9 +207,10 @@ bool RPC::register_callback(int rpc_id, RPC_CALLBACK *pfnCB)
 // Match the command id to the registered callback function
 // returns NULL if none found
 //
-RPC_CALLBACK *find_callback(uint32_t rpc_id)
+RPC_CALLBACK * RPC::find_callback(int rpc_id)
 {
 int i;
+
   for (i=0; i<_rpc_count; i++) {
     if (rpc_id == _rpcList[i].id)
       return _rpcList[i].pfnCallback;
@@ -250,43 +340,11 @@ return rc;
 // Receive bytes (either master or slave)
 //
 // Lowest level data reception - reads raw bytes from the chosen channel
-..
+//
 bool RPC::_get_bytes(uint8_t *data, uint32_t len, int timeout)
 {
-unsigned long end;
-bool rc = false;
-uint32_t i = 0;
-
-    end = millis() + timeout;
-
-    switch (_comm_type) {
-        case RPC_I2C:
-            Wire.requestFrom(I2C_ADDR, len);
-            while (millis() < end && i < len && Wire.available()) {
-                data[i++] = Wire.read();
-            }
-            break;
-        case RPC_UART:
-            while (millis() < end && i < len) {
-                data[i++] = Serial.read();
-            }
-            break;
-        case RPC_SOFTUART:
-            while (millis() < end && i < len) {
-                data[i++] = _sserial->read();
-            }
-            break;
-        case RPC_SPI:
-            SPI.beginTransaction(SPISettings(_speed, MSBFIRST, SPI_MODE0));
-            while (millis() < end && i < len) {
-                data[i++] = SPI.transfer(0);
-            }
-            SPI.endTransaction();
-            break;
-    } // switch on comm type
-    rc = (i == len);
-    return rc;
-} /* _get_bytes() */
+    return _pCom->get_bytes(data, len, timeout);
+} /* RPC::_get_bytes() */
 //
 // Send bytes (either master or slave)
 //
@@ -294,35 +352,7 @@ uint32_t i = 0;
 //
 bool RPC::_put_bytes(uint8_t *data, uint32_t data_len, int timeout)
 {
-unsigned long end;
-bool rc = false;
-
-    end = millis() + timeout;
-    while (!rc && millis() < end) { 
-        switch (_comm_type) {
-            case RPC_I2C:
-               Wire.beginTransmission(I2C_ADDR);
-               Wire.write(data, data_len);
-               rc = !Wire.endTransmission();
-               break;
-            case RPC_UART:
-               Serial.write(data, data_len);
-               rc = true;
-               break;
-            case RPC_SOFTUART:
-               _sserial->write(data, data_len);
-               rc = true;
-               break;
-            case RPC_SPI:
-               SPI.beginTransaction(SPISettings(_speed, MSBFIRST, SPI_MODE0));
-               SPI.transfer(data, data_len);
-               SPI.endTransaction();
-               rc = true;
-               break;
-        } // switch
-    } // while waiting for timeout
-
-    return rc;
+    return _pCom->put_bytes(data, data_len, timeout);
 } /* _put_bytes() */
 
 //
