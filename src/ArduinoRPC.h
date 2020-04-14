@@ -1,7 +1,7 @@
 //
 // Arduino RPC (Remote Procedure Call) library
 // Copyright (c) 2020 OpenMV
-// written by Kwabena Agyeman and Larry Bank
+// written by Larry Bank
 //
 // project started April, 2020
 //
@@ -74,8 +74,11 @@ enum
 class rpc_comm	//base class
 {
   public:
-    bool get_bytes(uint8_t *data, uint32_t len, int timeout);
-    bool put_bytes(uint8_t *data, uint32_t data_len, int timeout);
+    bool init(int iAddr, unsigned long speed) {(void)iAddr; (void)speed; return false;}
+    bool init(int pin1, int pin2, unsigned long speed) {(void)pin1; (void)pin2; (void)speed; return false;}
+    bool init(unsigned long speed) {(void)speed; return false;}
+    bool get_bytes(uint8_t *data, uint32_t data_len, int timeout) {(void)data; (void)data_len; (void)timeout; return false;}
+    bool put_bytes(uint8_t *data, uint32_t data_len, int timeout) {(void)data; (void)data_len; (void)timeout; return false;}
 };
 
 //
@@ -84,7 +87,10 @@ class rpc_comm	//base class
 class rpc_i2c : public rpc_comm
 {
   public:
-    bool init(int iAddr, unsigned long speed); 
+    bool init(int iAddr, unsigned long speed);
+    bool get_bytes(uint8_t *data, uint32_t len, int timeout);
+    bool put_bytes(uint8_t *data, uint32_t data_len, int timeout);
+
   private:
     int _iAddr;
 };
@@ -93,12 +99,16 @@ class rpc_uart : public rpc_comm
 {
   public:
     bool init(unsigned long speed);
+    bool get_bytes(uint8_t *data, uint32_t len, int timeout);
+    bool put_bytes(uint8_t *data, uint32_t data_len, int timeout);
 };
 
 class rpc_softuart : public rpc_comm
 {
   public:
     bool init(int pin1, int pin2, unsigned long speed);
+    bool get_bytes(uint8_t *data, uint32_t len, int timeout);
+    bool put_bytes(uint8_t *data, uint32_t data_len, int timeout);
   private:
     SoftwareSerial *_sserial;
 };
@@ -107,6 +117,8 @@ class rpc_spi : public rpc_comm
 {
   public:
     bool init(unsigned long speed);
+    bool get_bytes(uint8_t *data, uint32_t len, int timeout);
+    bool put_bytes(uint8_t *data, uint32_t data_len, int timeout);
   private:
     unsigned long _speed;
 }; 

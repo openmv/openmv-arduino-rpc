@@ -1,7 +1,7 @@
 //
 // Arduino RPC (Remote Procedure Call) library
 // Copyright (c) 2020 OpenMV
-// written by Kwabena Agyeman and Larry Bank
+// written by Larry Bank
 //
 // project started April, 2020
 //
@@ -48,7 +48,7 @@ bool rpc_i2c::init(int iAddr, unsigned long speed)
 bool rpc_i2c::get_bytes(uint8_t *data, uint32_t len, int timeout)
 {
 unsigned long end = millis() + timeout;
-int i = 0;
+uint32_t i = 0;
     
     Wire.requestFrom(_iAddr, len);
     while (millis() < end && i < len && Wire.available()) {
@@ -60,6 +60,7 @@ int i = 0;
 
 bool rpc_i2c::put_bytes(uint8_t *data, uint32_t data_len, int timeout)
 {
+    (void)timeout;
     Wire.beginTransmission(_iAddr);
     Wire.write(data, data_len);
     return !Wire.endTransmission();
@@ -76,7 +77,7 @@ bool rpc_spi::init(unsigned long speed)
 
 bool rpc_spi::get_bytes(uint8_t *data, uint32_t len, int timeout)
 {
-int i;
+uint32_t i = 0;
 unsigned long end = millis() + timeout;
     
     SPI.beginTransaction(SPISettings(_speed, MSBFIRST, SPI_MODE0));
@@ -89,6 +90,7 @@ unsigned long end = millis() + timeout;
 
 bool rpc_spi::put_bytes(uint8_t *data, uint32_t data_len, int timeout)
 {
+    (void)timeout;
     SPI.beginTransaction(SPISettings(_speed, MSBFIRST, SPI_MODE0));
     SPI.transfer(data, data_len);
     SPI.endTransaction();
@@ -104,7 +106,7 @@ bool rpc_uart::init(unsigned long speed)
 
 bool rpc_uart::get_bytes(uint8_t *data, uint32_t len, int timeout)
 {
-int i = 0;
+uint32_t i = 0;
 unsigned long end = millis() + timeout;
     
     while (millis() < end && i < len) {
@@ -115,6 +117,7 @@ unsigned long end = millis() + timeout;
 
 bool rpc_uart::put_bytes(uint8_t *data, uint32_t data_len, int timeout)
 {
+    (void)timeout;
     Serial.write(data, data_len);
     return true;
 } /* rpc_uart::put_bytes() */
@@ -129,7 +132,7 @@ bool rpc_softuart::init(int pin1, int pin2, unsigned long speed)
 
 bool rpc_softuart::get_bytes(uint8_t *data, uint32_t len, int timeout)
 {
-int i = 0;
+uint32_t i = 0;
 unsigned long end = millis() + timeout;
     
     while (millis() < end && i < len) {
@@ -140,6 +143,7 @@ unsigned long end = millis() + timeout;
 
 bool rpc_softuart::put_bytes(uint8_t *data, uint32_t data_len, int timeout)
 {
+   (void)timeout;
     _sserial->write(data, data_len);
     return true;
 } /* rpc_softuart::put_bytes() */
