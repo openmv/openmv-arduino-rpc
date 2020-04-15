@@ -39,7 +39,7 @@
 #define I2C_ADDR 0x12
 
 // Callback function prototype
-typedef uint32_t (RPC_CALLBACK)(int iEvent, uint8_t *data, uint32_t data_len);
+typedef uint32_t (*RPC_CALLBACK)(uint32_t event, uint8_t *data, uint32_t data_len);
 
 //
 // Structure holding the list of function IDs matched with their
@@ -47,8 +47,8 @@ typedef uint32_t (RPC_CALLBACK)(int iEvent, uint8_t *data, uint32_t data_len);
 //
 typedef struct tagrpclist
 {
-  RPC_CALLBACK *pfnCallback;
-  int id;
+  RPC_CALLBACK pfnCallback;
+  uint32_t id;
 } RPCLIST;
 
 class RPC
@@ -71,17 +71,17 @@ class RPC
 class rpc_master : public RPC
 {
   public:
-    bool put_command(int cmd, uint8_t *data, uint32_t data_len, int timeout);
+    bool put_command(uint32_t cmd, uint8_t *data, uint32_t data_len, int timeout);
     bool get_result(uint8_t *data, uint32_t *data_len, int timeout);
-    bool call(int rpc_id, uint8_t *out_data, uint32_t out_data_len, uint8_t *in_data, uint32_t *in_data_len, int send_timeout, int recv_timeout);
+    bool call(uint32_t rpc_id, uint8_t *out_data, uint32_t out_data_len, uint8_t *in_data, uint32_t *in_data_len, int send_timeout, int recv_timeout);
 };
 
 class rpc_slave : public RPC
 {
   public:
-    bool register_callback(int rpc_id, RPC_CALLBACK *);
+    bool register_callback(uint32_t rpc_id, RPC_CALLBACK pfnCB);
     uint32_t get_command(uint8_t *data, uint32_t *data_len);
-    RPC_CALLBACK *find_callback(int rpc_id);
+    RPC_CALLBACK find_callback(uint32_t rpc_id);
     void put_result(uint8_t *data, uint32_t data_len);
     void loop();
 
@@ -110,9 +110,12 @@ class rpc_i2c_slave : public rpc_slave
     rpc_i2c_slave(int iAddr, unsigned long speed);
     bool get_bytes(uint8_t *data, uint32_t len, int timeout);
     bool put_bytes(uint8_t *data, uint32_t len, int timeout);
-
-  private:
-    int _iAddr;
+    static void receive_event(int len);
+    static void request_event(void);
+    
+    static uint32_t _receive_len;
+    static uint32_t _response_len;
+    static unsigned char _buf[MAX_LOCAL_BUFFER];
 };
 
 class rpc_uart_master : public rpc_master

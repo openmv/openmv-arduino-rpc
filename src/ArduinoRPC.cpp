@@ -11,6 +11,12 @@
 #include <Wire.h>
 #include <SPI.h>
 
+// Need to declare storage for these static class variables
+// which are part of the rpc_i2c_slave class
+uint32_t rpc_i2c_slave::_receive_len;
+uint32_t rpc_i2c_slave::_response_len;
+uint8_t rpc_i2c_slave::_buf[MAX_LOCAL_BUFFER];
+
 //
 // Communication protocol
 //
@@ -36,6 +42,26 @@
 // Public methods
 //
 
+void rpc_slave::loop(void)
+{
+uint32_t len, new_len, cmd;
+uint8_t ucTemp[MAX_LOCAL_BUFFER];
+RPC_CALLBACK pfnCB;
+
+    while (1) {
+      cmd = get_command(ucTemp, &len);
+      if (cmd) {
+        pfnCB = find_callback(cmd);
+        if (pfnCB) { // we registered a callback for this command
+          new_len = (*pfnCB)(cmd, ucTemp, len);
+          put_result(ucTemp, new_len);
+        } else { // no callback to respond
+          put_result(ucTemp, 0); // DEBUG - need a NACK
+        }
+      }
+    }
+} /* rpc_slave::loop() */
+
 rpc_i2c_master::rpc_i2c_master(int iAddr, unsigned long speed)
 {
     _iAddr = iAddr;
@@ -43,6 +69,63 @@ rpc_i2c_master::rpc_i2c_master(int iAddr, unsigned long speed)
     Wire.setClock(speed);
 
 } /* rpc_i2c::rpc_i2c_master() */
+
+rpc_i2c_slave::rpc_i2c_slave(int iAddr, unsigned long speed)
+{
+    Wire.begin(iAddr); // register as slave at address 'iAddr'
+    Wire.setClock(speed);
+    Wire.onReceive(receive_event); // register callback event
+    Wire.onRequest(request_event);
+    _receive_len = _response_len = 0;
+} /* rpc_i2c::rpc_i2c_master() */
+
+void rpc_i2c_slave::receive_event(int len)
+{
+    while(0 < Wire.available() && _receive_len < (unsigned)len && _receive_len < MAX_LOCAL_BUFFER)
+    {
+      _buf[_receive_len++] = Wire.read(); // gather incoming data
+    }
+} /* rpc_i2c_slave::receive_event() */
+
+void rpc_i2c_slave::request_event(void)
+{
+    if (_response_len) {
+        Wire.write(_buf, _response_len);
+        _response_len = 0; // indicate we transsmitted the buffer to the master
+    }
+} /* rpc_i2c_slave::request_event() */
+
+bool rpc_i2c_slave::get_bytes(uint8_t *data, uint32_t len, int timeout)
+{
+unsigned long end = millis() + timeout;
+    
+    // wait for data to arrive
+    while (millis() < end && _receive_len < len) {
+        delay(1); // allow CPU to do something else
+    }
+    if (_receive_len >= len) { // we fulfilled the request
+        memcpy(data, _buf, len);
+        memcpy(_buf, &_buf[len], _receive_len - len); // move unused data down
+        _receive_len -= len;
+        return true;
+    }
+    return false;
+} /* rpc_i2c_slave::get_bytes() */
+
+bool rpc_i2c_slave::put_bytes(uint8_t *data, uint32_t data_len, int timeout)
+{
+    unsigned long end = millis() + timeout;
+    // Prepare the outbound data for the master
+    // The master must request it, we can't push it
+    // so place it in our buffer, ready to go
+    memcpy(_buf, data, data_len);
+    _response_len = data_len;
+    while (millis() < end && _response_len != 0) {
+        delay(1); // wait for master to read the data it asked for
+    }
+    return (_response_len == 0); // indicates data was read by master
+
+} /* rpc_i2c_master::put_bytes() */
 
 bool rpc_i2c_master::get_bytes(uint8_t *data, uint32_t len, int timeout)
 {
@@ -149,7 +232,7 @@ bool rpc_softuart_master::put_bytes(uint8_t *data, uint32_t data_len, int timeou
 //
 // This is used on the Slave side to manage execution of incoming commands
 //
-bool rpc_slave::register_callback(int rpc_id, RPC_CALLBACK *pfnCB)
+bool rpc_slave::register_callback(uint32_t rpc_id, RPC_CALLBACK pfnCB)
 {
     if (_rpc_count >= MAX_CALLBACKS) // out of space to save this
         return false;
@@ -162,7 +245,7 @@ bool rpc_slave::register_callback(int rpc_id, RPC_CALLBACK *pfnCB)
 // Match the command id to the registered callback function
 // returns NULL if none found
 //
-RPC_CALLBACK * rpc_slave::find_callback(int rpc_id)
+RPC_CALLBACK rpc_slave::find_callback(uint32_t rpc_id)
 {
 int i;
 
@@ -178,7 +261,7 @@ int i;
 // 
 // Used by the Master side to direct the Slave to execute a command
 //
-bool rpc_master::call(int rpc_id, uint8_t *out_data, uint32_t out_data_len, uint8_t *in_data, uint32_t *in_data_len, int send_timeout, int recv_timeout)
+bool rpc_master::call(uint32_t rpc_id, uint8_t *out_data, uint32_t out_data_len, uint8_t *in_data, uint32_t *in_data_len, int send_timeout, int recv_timeout)
 {
 bool rc = false;
 
@@ -209,7 +292,7 @@ uint16_t crc = 0xFFFF;
 //
 // Construct and send a command packet from Master to Slave
 //
-bool rpc_master::put_command(int cmd, uint8_t *data, uint32_t data_len, int timeout)
+bool rpc_master::put_command(uint32_t cmd, uint8_t *data, uint32_t data_len, int timeout)
 {
 unsigned long start, end;
 bool rc = false;

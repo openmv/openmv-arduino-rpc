@@ -4,8 +4,6 @@
 //
 #include <ArduinoRPC.h>
 
-RPC rpc;
-
 const uint32_t FACE_DETECTION_CALL_BACK_INDEX = 10;
 const uint32_t PERSON_DETECTION_CALL_BACK_INDEX = 20;
 const uint32_t QRCODE_DETECTION_CALL_BACK_INDEX = 30;
@@ -25,10 +23,11 @@ const int8_t  thresholds[] = {30, 100, 15, 127, 15, 127}; // generic red thresho
 // const int8_t thresholds[] = {30, 100, -64, -8, -32, 32}; // generic green thresholds
 // const int8_t thresholds[] = {0, 30, 0, 64, -128, 0}; // generic blue thresholds
 
+rpc_i2c_master rpc(I2C_ADDR, 400000L);
+
 void setup()
 {
   Serial.begin(115200);
-  rpc.begin(RPC_I2C, 400000L);
   
 } /* setup() */
 
