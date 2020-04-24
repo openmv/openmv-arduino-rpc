@@ -17,6 +17,8 @@ uint32_t rpc_i2c_slave::_receive_len;
 uint32_t rpc_i2c_slave::_response_len;
 uint8_t rpc_i2c_slave::_buf[MAX_LOCAL_BUFFER];
 
+#define DEBUG_MSG(n) Serial.println(n)
+
 //
 // Communication protocol
 //
@@ -51,11 +53,20 @@ RPC_CALLBACK pfnCB;
     while (1) {
       cmd = get_command(ucTemp, &len);
       if (cmd) {
+        DEBUG_MSG("Got command");
         pfnCB = find_callback(cmd);
         if (pfnCB) { // we registered a callback for this command
+          DEBUG_MSG("Valid command");
           new_len = (*pfnCB)(cmd, ucTemp, len);
-          put_result(ucTemp, new_len);
+            if (put_result(ucTemp, new_len)) {
+                DEBUG_MSG("Result sent successfully");
+                if (_schedule_cb) { // call another function indicating success
+                    (*_scedule_cb)(cmd, ucTemp len);
+                    _schedule_cb = NULL; // only call it once
+                }
+            }
         } else { // no callback to respond
+          DEBUG_MSG("Command not registered");
           put_result(ucTemp, 0); // DEBUG - need a NACK
         }
       }
@@ -77,7 +88,7 @@ rpc_i2c_slave::rpc_i2c_slave(int iAddr, unsigned long speed)
     Wire.onReceive(receive_event); // register callback event
     Wire.onRequest(request_event);
     _receive_len = _response_len = 0;
-} /* rpc_i2c::rpc_i2c_master() */
+} /* rpc_i2c_slave::rpc_i2c_slave() */
 
 void rpc_i2c_slave::receive_event(int len)
 {
@@ -125,7 +136,7 @@ bool rpc_i2c_slave::put_bytes(uint8_t *data, uint32_t data_len, int timeout)
     }
     return (_response_len == 0); // indicates data was read by master
 
-} /* rpc_i2c_master::put_bytes() */
+} /* rpc_i2c_slave::put_bytes() */
 
 bool rpc_i2c_master::get_bytes(uint8_t *data, uint32_t len, int timeout)
 {
@@ -201,6 +212,38 @@ bool rpc_uart_master::put_bytes(uint8_t *data, uint32_t data_len, int timeout)
     return true;
 } /* rpc_uart_master::put_bytes() */
 
+rpc_uart_slave::rpc_uart_slave(unsigned long speed)
+{
+    Serial.begin(speed);
+} /* rpc_uart_slave::rpc_uart_slave() */
+
+bool rpc_uart_slave::get_bytes(uint8_t *data, uint32_t len, int timeout)
+{
+unsigned long end = millis() + timeout;
+uint32_t i = 0;
+    
+    // wait for data to arrive
+    while (millis() < end && i < len) {
+        if (Serial.available() > 0)
+            data[i++] = Serial.read();
+        else
+            delay(1); // allow time for data to arrive
+    }
+    return (i == len);
+} /* rpc_uart_slave::get_bytes() */
+
+bool rpc_uart_slave::put_bytes(uint8_t *data, uint32_t len, int timeout)
+{
+unsigned long end = millis() + timeout;
+uint32_t i = 0;
+    
+    while (millis() < end && i < len) {
+        Serial.write(data[i]); // small MCUs can't handle a single, large write, so do it byte by byte
+    }
+    return (i == len); // indicates data was read by master
+
+} /* rpc_uart_slave::put_bytes() */
+
 rpc_softuart_master::rpc_softuart_master(int pin1, int pin2, unsigned long speed)
 {
     _sserial = new SoftwareSerial(pin1, pin2);
@@ -225,6 +268,39 @@ bool rpc_softuart_master::put_bytes(uint8_t *data, uint32_t data_len, int timeou
     return true;
 } /* rpc_softuart_master::put_bytes() */
 
+rpc_softuart_slave::rpc_softuart_slave(int pin1, int pin2, unsigned long speed)
+{
+    _sserial = new SoftwareSerial(pin1, pin2);
+    _sserial->begin(speed);
+} /* rpc_softuart_slave::rpc_softuart_slave() */
+
+bool rpc_softuart_slave::get_bytes(uint8_t *data, uint32_t len, int timeout)
+{
+unsigned long end = millis() + timeout;
+uint32_t i = 0;
+    
+    // wait for data to arrive
+    while (millis() < end && i < len) {
+        if (_sserial->available() > 0)
+            data[i++] = _sserial->read();
+        else
+            delay(1); // allow time for data to arrive
+    }
+    return (i == len);
+} /* rpc_softuart_slave::get_bytes() */
+
+bool rpc_softuart_slave::put_bytes(uint8_t *data, uint32_t len, int timeout)
+{
+unsigned long end = millis() + timeout;
+uint32_t i = 0;
+    
+    while (millis() < end && i < len) {
+        _sserial->write(data[i]); // small MCUs can't handle a single, large write, so do it byte by byte
+    }
+    return (i == len); // indicates data was read by master
+
+} /* rpc_softuart_slave::put_bytes() */
+
 //
 // Register the callback function for the specific remote procedure
 // returns false if memory has been exhausted
@@ -241,6 +317,16 @@ bool rpc_slave::register_callback(uint32_t rpc_id, RPC_CALLBACK pfnCB)
     _rpc_count++; 
     return true;
 } /* rpc_slave::register_callback() */
+//
+// Schedule a callback for when RPC handshake has completed and
+// the slave and master are in sync. This can be used to initiate
+// higher speed transfers without back-and-forth handshake protocol
+//
+void rpc_slave::schedule_callback(RPC_CALLBACK pfnCB)
+{
+    _schedule_cb = pfnCB;
+} /* rpc_slave::schedule_callback() */
+
 //
 // Match the command id to the registered callback function
 // returns NULL if none found
@@ -265,8 +351,14 @@ bool rpc_master::call(uint32_t rpc_id, uint8_t *out_data, uint32_t out_data_len,
 {
 bool rc = false;
 
+    DEBUG_MSG("About to send command");
     if (put_command(rpc_id, out_data, out_data_len, send_timeout)) {
+        DEBUG_MSG("Command sent, awaiting result...");
        rc = get_result(in_data, in_data_len, recv_timeout);
+        if (rc)
+            DEBUG_MSG("Result received");
+        else
+            DEBUG_MSG("Error receiving result");
     }
     return rc;
 } /* rpc_master::call() */
@@ -276,16 +368,19 @@ bool rc = false;
 //
 uint16_t  RPC::crc16(uint8_t *data, uint32_t len)
 {
-uint8_t * d = data;
+uint8_t c, *d = data;
 uint16_t crc = 0xFFFF;
 
     for(uint32_t i=0; i<len; i++) {
-        crc ^= (d[i] << 8);
-        for(int j=0; j<8; j++) {
-            crc = (crc << 1);
-            if (crc & 0x8000)
-                crc ^= 0x1021;
-        } // for j
+//        crc ^= (d[i] << 8);
+//        for(int j=0; j<8; j++) {
+//            crc = (crc << 1);
+//            if (crc & 0x8000)
+//                crc ^= 0x1021;
+//        } // for j
+        c = crc >> 8 ^ *d++;
+        c ^= c>>4;
+        crc = (crc << 8) ^ ((unsigned short)(c << 12)) ^ ((unsigned short)(c << 5)) ^ ((unsigned short)c);
     } // for i
     return crc;
 } /* RPC::crc16() */
@@ -301,14 +396,18 @@ uint32_t *uiTemp = (uint32_t *)ucTemp;
 
     start = millis();
     end = start + timeout;
+    _put_short_timeout = _put_short_timeout_reset;
+    _get_short_timeout = _get_short_timeout_reset;
     while (millis() < end) {
         uiTemp[0] = cmd; uiTemp[1] = data_len; 
-        put_packet(__COMMAND_HEADER_PACKET_MAGIC, ucTemp, 8, 10);
-        if (get_packet(__COMMAND_HEADER_PACKET_MAGIC, ucTemp, 0, 20)) {
-            put_packet(__COMMAND_DATA_PACKET_MAGIC, data, data_len, 5000);
-            if (get_packet(__COMMAND_DATA_PACKET_MAGIC, ucTemp, 0, 20))
+        put_packet(__COMMAND_HEADER_PACKET_MAGIC, ucTemp, 8, _put_short_timeout);
+        if (get_packet(__COMMAND_HEADER_PACKET_MAGIC, ucTemp, 0, _get_short_timeout)) {
+            put_packet(__COMMAND_DATA_PACKET_MAGIC, data, data_len, _put_long_timeout);
+            if (get_packet(__COMMAND_DATA_PACKET_MAGIC, ucTemp, 0, _get_short_timeout))
                 rc = true;
         }
+        _put_short_timeout = (_put_short_timeout * 6) / 4;
+        _get_short_timeout = (_get_short_timeout * 6) / 4;
     } // while waiting for main timeout
     return rc;
 } /* rpc_master::put_command() */
@@ -323,16 +422,20 @@ uint32_t len;
 
     start = millis();
     end = start + timeout;
+    _put_short_timeout = _put_short_timeout_reset;
+    _get_short_timeout = _get_short_timeout_reset;
     while (millis() < end) {
-        put_packet(__RESULT_HEADER_PACKET_MAGIC, data, 0, 10);
-        if (get_packet(__RESULT_HEADER_PACKET_MAGIC, data, 4, 20)) {
+        put_packet(__RESULT_HEADER_PACKET_MAGIC, data, 0, _put_short_timeout);
+        if (get_packet(__RESULT_HEADER_PACKET_MAGIC, data, 4, _get_short_timeout)) {
             len = *(uint32_t *)data; 
-            put_packet(__RESULT_DATA_PACKET_MAGIC, data, 0, 10);
-            if (get_packet(__RESULT_DATA_PACKET_MAGIC, data, len, 5000)) {
+            put_packet(__RESULT_DATA_PACKET_MAGIC, data, 0, _put_short_timeout);
+            if (get_packet(__RESULT_DATA_PACKET_MAGIC, data, len, _get_long_timeout)) {
                 rc = true;
                 *data_len = len;
             }
         }
+        _put_short_timeout = (_put_short_timeout * 6) / 4;
+        _get_short_timeout = (_get_short_timeout * 6) / 4;
     } // while not timeout
     return rc;
 } /* rpc_master::get_result() */
@@ -382,7 +485,7 @@ bool RPC::put_packet(uint16_t magic_value, uint8_t *data, uint32_t data_len, int
 {
 bool rc = false;
 uint16_t crc;
-uint32_t len = 2;
+uint32_t len;
 uint8_t ucTemp[MAX_LOCAL_BUFFER]; // this limits the amount of data we can send
 
 
@@ -390,6 +493,7 @@ uint8_t ucTemp[MAX_LOCAL_BUFFER]; // this limits the amount of data we can send
 // buffer so that they can be sent in a single comm transaction
 
     *(uint16_t *)ucTemp = magic_value; // start with 2 bytes of magic value
+    len = 2;
     memcpy(&ucTemp[len], data, data_len);
     len += data_len;
     crc = crc16(ucTemp, len);

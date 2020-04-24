@@ -65,6 +65,12 @@ class RPC
     const uint16_t __COMMAND_DATA_PACKET_MAGIC = 0xABD1;
     const uint16_t __RESULT_HEADER_PACKET_MAGIC = 0x9021;
     const uint16_t __RESULT_DATA_PACKET_MAGIC = 0x1DBA;
+private:
+    int _put_short_timeout;
+    int _get_short_timeout;
+    const int _put_long_timeout = 5000;
+    const int _get_long_timeout = 5000;
+
 
 };
 
@@ -74,12 +80,17 @@ class rpc_master : public RPC
     bool put_command(uint32_t cmd, uint8_t *data, uint32_t data_len, int timeout);
     bool get_result(uint8_t *data, uint32_t *data_len, int timeout);
     bool call(uint32_t rpc_id, uint8_t *out_data, uint32_t out_data_len, uint8_t *in_data, uint32_t *in_data_len, int send_timeout, int recv_timeout);
+private:
+    const int _put_short_timeout_reset = 3;
+    const int _get_short_timeout_reset = 3;
+
 };
 
 class rpc_slave : public RPC
 {
   public:
     bool register_callback(uint32_t rpc_id, RPC_CALLBACK pfnCB);
+    void schedule_callback(RPC_CALLBACK pfnCB);
     uint32_t get_command(uint8_t *data, uint32_t *data_len);
     RPC_CALLBACK find_callback(uint32_t rpc_id);
     void put_result(uint8_t *data, uint32_t data_len);
@@ -87,7 +98,10 @@ class rpc_slave : public RPC
 
   private:
     RPCLIST _rpcList[MAX_CALLBACKS]; // list of registered callbacks
+    RPC_CALLBACK _schedule_cb = NULL;
     int _rpc_count; // number of registered callback functions
+    const int _put_short_timeout_reset = 2;
+    const int _get_short_timeout_reset = 2;
 };
 
 //
