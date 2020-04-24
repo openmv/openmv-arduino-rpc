@@ -65,7 +65,6 @@ class RPC
     const uint16_t __COMMAND_DATA_PACKET_MAGIC = 0xABD1;
     const uint16_t __RESULT_HEADER_PACKET_MAGIC = 0x9021;
     const uint16_t __RESULT_DATA_PACKET_MAGIC = 0x1DBA;
-private:
     int _put_short_timeout;
     int _get_short_timeout;
     const int _put_long_timeout = 5000;
@@ -91,9 +90,9 @@ class rpc_slave : public RPC
   public:
     bool register_callback(uint32_t rpc_id, RPC_CALLBACK pfnCB);
     void schedule_callback(RPC_CALLBACK pfnCB);
-    uint32_t get_command(uint8_t *data, uint32_t *data_len);
+    uint32_t get_command(uint8_t *data, uint32_t *data_len, int timeout);
     RPC_CALLBACK find_callback(uint32_t rpc_id);
-    void put_result(uint8_t *data, uint32_t data_len);
+    bool put_result(uint8_t *data, uint32_t data_len, int timeout);
     void loop();
 
   private:

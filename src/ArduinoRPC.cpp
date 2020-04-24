@@ -51,23 +51,23 @@ uint8_t ucTemp[MAX_LOCAL_BUFFER];
 RPC_CALLBACK pfnCB;
 
     while (1) {
-      cmd = get_command(ucTemp, &len);
+      cmd = get_command(ucTemp, &len, 1000);
       if (cmd) {
         DEBUG_MSG("Got command");
         pfnCB = find_callback(cmd);
         if (pfnCB) { // we registered a callback for this command
           DEBUG_MSG("Valid command");
           new_len = (*pfnCB)(cmd, ucTemp, len);
-            if (put_result(ucTemp, new_len)) {
+            if (put_result(ucTemp, new_len, 1000)) {
                 DEBUG_MSG("Result sent successfully");
-                if (_schedule_cb) { // call another function indicating success
-                    (*_scedule_cb)(cmd, ucTemp len);
+                if (_schedule_cb != NULL) { // call another function indicating success
+                    (*_schedule_cb)(cmd, ucTemp, len);
                     _schedule_cb = NULL; // only call it once
                 }
             }
         } else { // no callback to respond
           DEBUG_MSG("Command not registered");
-          put_result(ucTemp, 0); // DEBUG - need a NACK
+          put_result(ucTemp, 0, 1000); // DEBUG - need a NACK
         }
       }
     }
@@ -492,7 +492,8 @@ uint8_t ucTemp[MAX_LOCAL_BUFFER]; // this limits the amount of data we can send
 // It's best to combine all of the bytes we're going to transmit into a single
 // buffer so that they can be sent in a single comm transaction
 
-    *(uint16_t *)ucTemp = magic_value; // start with 2 bytes of magic value
+    ucTemp[0] = (uint8_t)magic_value; // start with 2 bytes of magic value
+    ucTemp[1] = (uint8_t)(magic_value >> 8);
     len = 2;
     memcpy(&ucTemp[len], data, data_len);
     len += data_len;
@@ -507,24 +508,28 @@ return rc;
 //
 // Wait to receive a command from the master
 //
-uint32_t rpc_slave::get_command(uint8_t *data, uint32_t *data_len)
+uint32_t rpc_slave::get_command(uint8_t *data, uint32_t *data_len, int timeout)
 {
 unsigned long end;
 uint32_t len = 0, cmd = 0;
 uint8_t ucTemp[MIN_PACKET_SIZE];
 
-    end = millis() + 100;
+    end = millis() + timeout;
+    _put_short_timeout = _put_short_timeout_reset;
+    _get_short_timeout = _get_short_timeout_reset;
     while (millis() < end && cmd != 0) {
-        if (get_packet(__COMMAND_HEADER_PACKET_MAGIC, data, 8, 10)) {
+        if (get_packet(__COMMAND_HEADER_PACKET_MAGIC, data, 8, _get_short_timeout)) {
             cmd = *(uint32_t *)&data[0];
             len = *(uint32_t *)&data[4];
-            put_packet(__COMMAND_HEADER_PACKET_MAGIC, data, 0, 10); // send ack
-            if (get_packet(__COMMAND_DATA_PACKET_MAGIC, data, len, 5000)) {
-                put_packet(__COMMAND_DATA_PACKET_MAGIC, ucTemp, 0, 10); // send ack
+            put_packet(__COMMAND_HEADER_PACKET_MAGIC, data, 0, _put_short_timeout); // send ack
+            if (get_packet(__COMMAND_DATA_PACKET_MAGIC, data, len, _get_long_timeout)) {
+                put_packet(__COMMAND_DATA_PACKET_MAGIC, ucTemp, 0, _put_short_timeout); // send ack
             } else { // something went wrong, nullify it
                 cmd = len = 0;
             }
         }
+       _put_short_timeout++;
+       _get_short_timeout++;
     } // while waiting for incoming data
     *data_len = len;
     return cmd;
@@ -533,22 +538,28 @@ uint8_t ucTemp[MIN_PACKET_SIZE];
 //
 // Send the master the result of the last command
 //
-void rpc_slave::put_result(uint8_t *data, uint32_t data_len)
+bool rpc_slave::put_result(uint8_t *data, uint32_t data_len, int timeout)
 {
 bool done = false;
 unsigned long end;
 uint8_t ucTemp[MIN_PACKET_SIZE];
+uint32_t *p32 = (uint32_t *)ucTemp;
 
-    end = millis() + 100;
+    end = millis() + timeout;
+    _put_short_timeout = _put_short_timeout_reset;
+    _get_short_timeout = _get_short_timeout_reset;
     while (millis() < end && !done) {
-        if (get_packet(__RESULT_HEADER_PACKET_MAGIC, ucTemp, 0, 10)) {
-            *(uint32_t *)ucTemp = data_len;
+        if (get_packet(__RESULT_HEADER_PACKET_MAGIC, ucTemp, 0, _get_short_timeout)) {
+            p32[0] = data_len;
             // send length first as ack
-            put_packet(__RESULT_HEADER_PACKET_MAGIC, ucTemp, 4, 10);
-            if (get_packet(__RESULT_DATA_PACKET_MAGIC, ucTemp, 0, 10)) {
-                put_packet(__RESULT_DATA_PACKET_MAGIC, data, data_len, 5000);
+            put_packet(__RESULT_HEADER_PACKET_MAGIC, ucTemp, 4, _put_short_timeout);
+            if (get_packet(__RESULT_DATA_PACKET_MAGIC, ucTemp, 0, _get_short_timeout)) {
+                put_packet(__RESULT_DATA_PACKET_MAGIC, data, data_len, _put_long_timeout);
                 done = true;
             }
         }
+        _put_short_timeout++;
+        _get_short_timeout++;
     } // while not finished or not timed out
+    return done; // returns true if it didn't time out
 } /* rpc_slave::put_result() */
