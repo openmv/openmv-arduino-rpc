@@ -10,7 +10,9 @@
 #define __ARDUINO_RPC__
 
 #include <Arduino.h>
+#ifndef HAL_ESP32_HAL_H_
 #include <SoftwareSerial.h>
+#endif // !ESP32
 
 //
 // The list of registered callback functions for remote procedure calls
@@ -57,8 +59,9 @@ class RPC
     bool get_packet(uint16_t magic_value, uint8_t *data, uint32_t data_len, int timeout);
     bool put_packet(uint16_t magic_value, uint8_t *data, uint32_t data_len, int timeout);
     uint16_t crc16(uint8_t *data, uint32_t len);
-    bool get_bytes(uint8_t *data, uint32_t len, int timeout) {(void)data; (void)len; (void)timeout; return false;}
-    bool put_bytes(uint8_t *data, uint32_t len, int timeout) {(void)data; (void)len; (void)timeout; return false;}
+    uint32_t hash(const char *);
+    virtual bool get_bytes(uint8_t *data, uint32_t len, int timeout);
+    virtual bool put_bytes(uint8_t *data, uint32_t len, int timeout);
 
     // Prefixes sent at the beginning of every communication packet
     const uint16_t __COMMAND_HEADER_PACKET_MAGIC = 0x1209;
@@ -78,7 +81,7 @@ class rpc_master : public RPC
   public:
     bool put_command(uint32_t cmd, uint8_t *data, uint32_t data_len, int timeout);
     bool get_result(uint8_t *data, uint32_t *data_len, int timeout);
-    bool call(uint32_t rpc_id, uint8_t *out_data, uint32_t out_data_len, uint8_t *in_data, uint32_t *in_data_len, int send_timeout, int recv_timeout);
+    bool call(const char *name, uint8_t *out_data, uint32_t out_data_len, uint8_t *in_data, uint32_t *in_data_len, int send_timeout, int recv_timeout);
 private:
     const int _put_short_timeout_reset = 3;
     const int _get_short_timeout_reset = 3;
@@ -88,7 +91,7 @@ private:
 class rpc_slave : public RPC
 {
   public:
-    bool register_callback(uint32_t rpc_id, RPC_CALLBACK pfnCB);
+    bool register_callback(const char *name, RPC_CALLBACK pfnCB);
     void schedule_callback(RPC_CALLBACK pfnCB);
     uint32_t get_command(uint8_t *data, uint32_t *data_len, int timeout);
     RPC_CALLBACK find_callback(uint32_t rpc_id);
@@ -147,6 +150,7 @@ class rpc_uart_slave : public rpc_slave
     bool put_bytes(uint8_t *data, uint32_t len, int timeout);
 };
 
+#ifndef HAL_ESP32_HAL_H_
 class rpc_softuart_master : public rpc_master
 {
   public:
@@ -168,6 +172,7 @@ class rpc_softuart_slave : public rpc_slave
   private:
     SoftwareSerial *_sserial;
 };
+#endif // !ESP32
 
 class rpc_spi_master : public rpc_master
 {

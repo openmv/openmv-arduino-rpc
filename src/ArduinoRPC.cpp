@@ -7,7 +7,9 @@
 //
 
 #include <ArduinoRPC.h>
+#ifndef HAL_ESP32_HAL_H_
 #include <SoftwareSerial.h>
+#endif // !ESP32
 #include <Wire.h>
 #include <SPI.h>
 
@@ -79,7 +81,7 @@ rpc_i2c_master::rpc_i2c_master(int iAddr, unsigned long speed)
     Wire.begin();
     Wire.setClock(speed);
 
-} /* rpc_i2c::rpc_i2c_master() */
+} /* rpc_i2c_master::rpc_i2c_master() */
 
 rpc_i2c_slave::rpc_i2c_slave(int iAddr, unsigned long speed)
 {
@@ -244,6 +246,7 @@ uint32_t i = 0;
 
 } /* rpc_uart_slave::put_bytes() */
 
+#ifndef HAL_ESP32_HAL_H_
 rpc_softuart_master::rpc_softuart_master(int pin1, int pin2, unsigned long speed)
 {
     _sserial = new SoftwareSerial(pin1, pin2);
@@ -300,6 +303,7 @@ uint32_t i = 0;
     return (i == len); // indicates data was read by master
 
 } /* rpc_softuart_slave::put_bytes() */
+#endif // !ESP32
 
 //
 // Register the callback function for the specific remote procedure
@@ -308,10 +312,13 @@ uint32_t i = 0;
 //
 // This is used on the Slave side to manage execution of incoming commands
 //
-bool rpc_slave::register_callback(uint32_t rpc_id, RPC_CALLBACK pfnCB)
+bool rpc_slave::register_callback(const char *name, RPC_CALLBACK pfnCB)
 {
+uint32_t rpc_id;
+
     if (_rpc_count >= MAX_CALLBACKS) // out of space to save this
         return false;
+    rpc_id = hash(name);
     _rpcList[_rpc_count].id = rpc_id;
     _rpcList[_rpc_count].pfnCallback = pfnCB;
     _rpc_count++; 
@@ -347,11 +354,13 @@ int i;
 // 
 // Used by the Master side to direct the Slave to execute a command
 //
-bool rpc_master::call(uint32_t rpc_id, uint8_t *out_data, uint32_t out_data_len, uint8_t *in_data, uint32_t *in_data_len, int send_timeout, int recv_timeout)
+bool rpc_master::call(const char *name, uint8_t *out_data, uint32_t out_data_len, uint8_t *in_data, uint32_t *in_data_len, int send_timeout, int recv_timeout)
 {
 bool rc = false;
+uint32_t rpc_id;
 
     DEBUG_MSG("About to send command");
+    rpc_id = hash(name);
     if (put_command(rpc_id, out_data, out_data_len, send_timeout)) {
         DEBUG_MSG("Command sent, awaiting result...");
        rc = get_result(in_data, in_data_len, recv_timeout);
@@ -362,7 +371,21 @@ bool rc = false;
     }
     return rc;
 } /* rpc_master::call() */
+//
+// Calculate the string hash value
+// on AVR, the string will be in FLASH/PROGMEM
+//
+uint32_t RPC::hash(const char *name)
+{
+uint32_t c, h = 5381;
 
+  c = pgm_read_byte(name++);
+  while (c) {
+     h = ((h << 5UL) + h) ^ c;
+     c = pgm_read_byte(name++);
+  }
+  return h;
+} /* RPC::hash() */
 //
 // Calculate a 16-bit CRC value for a stream of data bytes
 //
@@ -409,6 +432,8 @@ uint32_t *uiTemp = (uint32_t *)ucTemp;
         _put_short_timeout = (_put_short_timeout * 6) / 4;
         _get_short_timeout = (_get_short_timeout * 6) / 4;
     } // while waiting for main timeout
+    if (!rc)
+       DEBUG_MSG("Timed out trying to send a packet");
     return rc;
 } /* rpc_master::put_command() */
 //
