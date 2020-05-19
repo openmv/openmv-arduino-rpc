@@ -7,19 +7,104 @@
 //
 
 #include <ArduinoRPC.h>
+
+#ifdef _LINUX_
+#include <stdlib.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <string.h>
+#include <fcntl.h>
+#include <sys/ioctl.h>
+#include <linux/i2c-dev.h>
+#include <linux/spi/spidev.h>
+#include <time.h>
+#include <termios.h>
+
+#else // Arduino
+
 #ifndef HAL_ESP32_HAL_H_
 #include <SoftwareSerial.h>
 #endif // !ESP32
 #include <Wire.h>
 #include <SPI.h>
+#endif // Arduino
 
 // Need to declare storage for these static class variables
 // which are part of the rpc_i2c_slave class
 uint32_t rpc_i2c_slave::_receive_len;
 uint32_t rpc_i2c_slave::_response_len;
 uint8_t rpc_i2c_slave::_buf[MAX_LOCAL_BUFFER];
+#ifdef _LINUX_
+// on Linux the default maximum transfer size is 4K
+#define MAX_SPI_BUF 4096
+static uint8_t ucTXBuf[MAX_SPI_BUF];
+static uint8_t ucRXBuf[MAX_SPI_BUF];
 
+#define DEBUG_MSG(n) printf(n)
+#define pgm_read_byte(n) (*n)
+
+int OpenSerialPort(char *szName, int iBaud)
+{
+struct termios toptions;
+int fdSerial;
+
+  fdSerial = open(szName, O_RDWR | O_NDELAY);
+  if (fdSerial < 0)
+    return -1;
+  tcgetattr(fdSerial, &toptions);
+  cfsetospeed(&toptions, iBaud);
+  cfsetispeed(&toptions, iBaud);
+// These options must be set up properly or it won't work
+// By default, Linux likes to use CANONICAL mode which filters the data stream
+// for special control characters and waits for ENTER to continue
+/* 8 bits, no parity, no stop bits */
+  toptions.c_cflag &= ~PARENB;
+  toptions.c_cflag &= ~CSTOPB;
+  toptions.c_cflag &= ~CSIZE;
+  toptions.c_cflag |= CS8; // 8 bit, no parity, 1 stop bit
+  /* no hardware flow control */
+  toptions.c_cflag &= ~CRTSCTS;
+  /* enable receiver, ignore status lines */
+  toptions.c_cflag |= CREAD | CLOCAL;
+  /* disable input/output flow control, disable restart chars */
+  toptions.c_iflag &= ~(IXON | IXOFF | IXANY);
+  /* disable canonical input, disable echo,
+  disable visually erase chars,
+  disable terminal-generated signals */
+  toptions.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
+  /* disable output processing */
+// toptions.c_oflag &= ~OPOST;
+  toptions.c_oflag = 0; // raw output
+
+  toptions.c_cc[VMIN] = 0;
+  /* wait up to 200ms for data to arrive */
+  toptions.c_cc[VTIME] = 0; //2;
+
+  tcflush(fdSerial, TCIFLUSH);
+  tcsetattr(fdSerial, TCSANOW, &toptions);
+  usleep(500*1000); // wait 1/2 second for baud rate change
+  return fdSerial;
+
+} /* OpenSerialPort() */
+
+unsigned long millis()
+{
+unsigned long iTime;
+struct timespec res;
+
+    clock_gettime(CLOCK_MONOTONIC, &res);
+    iTime = 1000*res.tv_sec + res.tv_nsec/1000000;
+
+    return iTime;
+} /* millis() */
+
+void delay(unsigned int iMillis)
+{
+  usleep(iMillis * 1000);
+}
+#else
 #define DEBUG_MSG(n) Serial.println(n)
+#endif
 
 //
 // Communication protocol
@@ -75,6 +160,23 @@ RPC_CALLBACK pfnCB;
     }
 } /* rpc_slave::loop() */
 
+#ifdef _LINUX_
+rpc_i2c_master::rpc_i2c_master(int iAddr, int iBus)
+{
+char filename[32];
+
+  sprintf(filename, "/dev/i2c-%d", iBus); // I2C bus number
+  if ((_iHandle = open(filename, O_RDWR)) < 0)
+     return;
+  if (ioctl(_iHandle, I2C_SLAVE, iAddr) < 0) // set slave address
+  {
+     close(_iHandle);
+     _iHandle = 0;
+  }
+
+} /* rpc_i2c_master::rpc_i2c_master() */
+// There is no I2C slave class on Linux
+#else // Arduino
 rpc_i2c_master::rpc_i2c_master(int iAddr, unsigned long speed)
 {
     _iAddr = iAddr;
@@ -91,7 +193,6 @@ rpc_i2c_slave::rpc_i2c_slave(int iAddr, unsigned long speed)
     Wire.onRequest(request_event);
     _receive_len = _response_len = 0;
 } /* rpc_i2c_slave::rpc_i2c_slave() */
-
 void rpc_i2c_slave::receive_event(int len)
 {
     while(0 < Wire.available() && _receive_len < (unsigned)len && _receive_len < MAX_LOCAL_BUFFER)
@@ -107,7 +208,9 @@ void rpc_i2c_slave::request_event(void)
         _response_len = 0; // indicate we transsmitted the buffer to the master
     }
 } /* rpc_i2c_slave::request_event() */
+#endif // LINUX
 
+#ifndef _LINUX_
 bool rpc_i2c_slave::get_bytes(uint8_t *data, uint32_t len, int timeout)
 {
 unsigned long end = millis() + timeout;
@@ -139,7 +242,28 @@ bool rpc_i2c_slave::put_bytes(uint8_t *data, uint32_t data_len, int timeout)
     return (_response_len == 0); // indicates data was read by master
 
 } /* rpc_i2c_slave::put_bytes() */
+#endif // !_LINUX_
 
+#ifdef _LINUX_
+bool rpc_i2c_master::get_bytes(uint8_t *data, uint32_t len, int timeout)
+{
+int rc;
+
+  (void)timeout;
+  rc = read(_iHandle, data, len);
+  return (rc > 0); 
+} /* rpc_i2c_master::get_bytes() */
+
+bool rpc_i2c_master::put_bytes(uint8_t *data, uint32_t len, int timeout)
+{
+int rc;
+
+  (void)timeout;
+  rc = write(_iHandle, data, len);
+  return (rc > 0);
+} /* rpc_i2c_master::put_bytes() */
+
+#else // Arduino
 bool rpc_i2c_master::get_bytes(uint8_t *data, uint32_t len, int timeout)
 {
 unsigned long end = millis() + timeout;
@@ -161,7 +285,51 @@ bool rpc_i2c_master::put_bytes(uint8_t *data, uint32_t data_len, int timeout)
     return !Wire.endTransmission();
 
 } /* rpc_i2c_master::put_bytes() */
+#endif // _LINUX_
 
+#ifdef _LINUX_
+rpc_spi_master::rpc_spi_master(int iBus, int speed)
+{
+char szName[32];
+int rc, iSPIMode = SPI_MODE_0;
+
+  sprintf(szName, "/dev/spidev%d.0", iBus);
+  _iHandle = open(szName, O_RDWR);
+  if (_iHandle >= 0)
+  {
+    rc = ioctl(_iHandle, SPI_IOC_WR_MODE, &iSPIMode);
+    if (rc >= 0)
+       ioctl(_iHandle, SPI_IOC_WR_MAX_SPEED_HZ, &speed);
+    memset(&xfer, 0, sizeof(xfer));
+    xfer.speed_hz = speed; 
+    xfer.bits_per_word = 8;
+    xfer.tx_buf = (unsigned long long)ucTXBuf;
+    xfer.rx_buf = (unsigned long long)ucRXBuf;
+  }
+} /* rpc_spi_master::rpc_spi_master() */
+
+bool rpc_spi_master::get_bytes(uint8_t *data, uint32_t len, int timeout)
+{
+int rc;
+
+    (void)timeout;
+    xfer.len = len;
+    rc = ioctl(_iHandle, SPI_IOC_MESSAGE(1), &xfer);
+    memcpy(data, ucRXBuf, len);
+    return (rc >= 0);
+} /* rpc_spi_master::get_bytes() */
+
+bool rpc_spi_master::put_bytes(uint8_t *data, uint32_t len, int timeout)
+{
+int rc;
+
+  (void)timeout;
+  xfer.len = len;
+  memcpy(ucTXBuf, data, len);
+  rc = ioctl(_iHandle, SPI_IOC_MESSAGE(1), &xfer);
+  return (rc >= 0); 
+} /* rpc_spi_master::put_bytes() */
+#else // Arduino
 rpc_spi_master::rpc_spi_master(unsigned long speed)
 {
     _speed = speed;
@@ -190,7 +358,55 @@ bool rpc_spi_master::put_bytes(uint8_t *data, uint32_t data_len, int timeout)
     SPI.endTransaction();
     return false;
 } /* rpc_spi_master::put_bytes() */
+#endif // _LINUX_
 
+#ifdef _LINUX_
+rpc_uart_master::rpc_uart_master(char *port_name, int speed)
+{
+  _iHandle = OpenSerialPort(port_name, speed);
+} /* rpc_uart_master::rpc_uart_master() */
+
+bool rpc_uart_master::get_bytes(uint8_t *data, uint32_t len, int timeout)
+{
+int rc;
+unsigned long iEnd;
+uint8_t *pBuf = data;
+
+  iEnd = millis() + timeout;
+  if (_iHandle >= 0)
+  {   
+    while (len && millis() < iEnd)
+    {
+      rc = read(_iHandle, pBuf, len);
+      if (rc <= 0)
+      {
+        usleep(2000); // 2ms to wait for data to arrive
+      }
+      else
+      {
+        len -= rc;
+        pBuf += rc;
+      }
+    }
+  }
+  return (len == 0);
+} /* rpc_uart_master::get_bytes() */
+
+bool rpc_uart_master::put_bytes(uint8_t *data, uint32_t len, int timeout)
+{
+int rc = -1;
+
+  if (_iHandle >= 0)
+  {
+    rc = write(_iHandle, data, len);
+    // This waits for data to full transmit before returning
+    // If we don't do this, multiple requests will get corrupted
+    tcdrain(_iHandle);
+  }
+  return (rc >= 0);
+} /* rpc_uart_master::put_bytes() */
+
+#else // Arduino
 rpc_uart_master::rpc_uart_master(unsigned long speed)
 {
     Serial.begin(speed);
@@ -214,6 +430,55 @@ bool rpc_uart_master::put_bytes(uint8_t *data, uint32_t data_len, int timeout)
     return true;
 } /* rpc_uart_master::put_bytes() */
 
+#endif // _LINUX_
+
+#ifdef _LINUX_
+rpc_uart_slave::rpc_uart_slave(char *port_name, int speed)
+{
+  _iHandle = OpenSerialPort(port_name, speed);
+} /* rpc_uart_slave::rpc_uart_slave() */
+
+bool rpc_uart_slave::get_bytes(uint8_t *data, uint32_t len, int timeout)
+{
+int rc;
+unsigned long iEnd;
+uint8_t *pBuf = data;
+
+  iEnd = millis() + timeout;
+  if (_iHandle >= 0)
+  {
+    while (len && millis() < iEnd)
+    {
+      rc = read(_iHandle, pBuf, len);
+      if (rc <= 0)
+      {
+        usleep(2000); // 2ms to wait for data to arrive
+      }
+      else
+      {
+        len -= rc;
+        pBuf += rc;
+      }
+    }
+  }
+  return (len == 0);
+} /* rpc_uart_slave::get_bytes() */
+
+bool rpc_uart_slave::put_bytes(uint8_t *data, uint32_t len, int timeout)
+{
+int rc = -1;
+
+  if (_iHandle >= 0)
+  {
+    rc = write(_iHandle, data, len);
+    // This waits for data to full transmit before returning
+    // If we don't do this, multiple requests will get corrupted
+    tcdrain(_iHandle);
+  }
+  return (rc >= 0);
+} /* rpc_uart_slave::put_bytes() */
+
+#else // Arduino
 rpc_uart_slave::rpc_uart_slave(unsigned long speed)
 {
     Serial.begin(speed);
@@ -245,8 +510,9 @@ uint32_t i = 0;
     return (i == len); // indicates data was read by master
 
 } /* rpc_uart_slave::put_bytes() */
+#endif // _LINUX_
 
-#ifndef HAL_ESP32_HAL_H_
+#if !defined( HAL_ESP32_HAL_H_ ) && !defined( _LINUX_ )
 rpc_softuart_master::rpc_softuart_master(int pin1, int pin2, unsigned long speed)
 {
     _sserial = new SoftwareSerial(pin1, pin2);
@@ -303,7 +569,7 @@ uint32_t i = 0;
     return (i == len); // indicates data was read by master
 
 } /* rpc_softuart_slave::put_bytes() */
-#endif // !ESP32
+#endif // !ESP32 && !_LINUX_
 
 //
 // Register the callback function for the specific remote procedure
@@ -415,7 +681,7 @@ bool rpc_master::put_command(uint32_t cmd, uint8_t *data, uint32_t data_len, int
 unsigned long start, end;
 bool rc = false;
 uint8_t ucTemp[8];
-uint32_t *uiTemp = (uint32_t *)ucTemp;
+uint32_t *uiTemp = (uint32_t *)&ucTemp[0];
 
     start = millis();
     end = start + timeout;
@@ -482,9 +748,17 @@ uint16_t crc, in_magic, in_crc;
     while (millis() < end && !rc) {
         // Confirm the packet has the right length, magic number and CRC
         if (get_bytes(payload, len, timeout)) { // got the length requested
-            in_magic = payload[0] | (payload[1] << 8);
+            in_magic = payload[0] | ((uint16_t)payload[1] << 8);
+//            Serial.print("in_magic = 0x");
+//            Serial.println(in_magic, HEX);
             crc = crc16(payload, len-2);
             in_crc = payload[len-2] | (payload[len-1] << 8);
+//            Serial.print("crc match? ");
+//            if (crc == in_crc) Serial.println("yes");
+//            else Serial.println("no");
+//            Serial.print("magic match? ");
+//            if (in_magic == magic_value) Serial.println("yes");
+//            else Serial.println("no");
             if (in_magic == magic_value && crc == in_crc)
                 rc = true;
             else
@@ -520,7 +794,8 @@ uint8_t ucTemp[MAX_LOCAL_BUFFER]; // this limits the amount of data we can send
     ucTemp[0] = (uint8_t)magic_value; // start with 2 bytes of magic value
     ucTemp[1] = (uint8_t)(magic_value >> 8);
     len = 2;
-    memcpy(&ucTemp[len], data, data_len);
+    if (data != NULL && data_len > 0)
+       memcpy(&ucTemp[len], data, data_len);
     len += data_len;
     crc = crc16(ucTemp, len);
     ucTemp[len++] = (uint8_t)crc;

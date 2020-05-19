@@ -9,10 +9,15 @@
 #ifndef __ARDUINO_RPC__
 #define __ARDUINO_RPC__
 
+#ifdef _LINUX_
+#include <stdint.h>
+#define NULL 0
+#else
 #include <Arduino.h>
 #ifndef HAL_ESP32_HAL_H_
 #include <SoftwareSerial.h>
 #endif // !ESP32
+#endif // !_LINUX_
 
 //
 // The list of registered callback functions for remote procedure calls
@@ -112,12 +117,21 @@ class rpc_slave : public RPC
 class rpc_i2c_master : public rpc_master
 {
   public:
+#ifdef _LINUX_
+    rpc_i2c_master(int iAddr, int iBus);
+#else
     rpc_i2c_master(int iAddr, unsigned long speed);
+#endif
     bool get_bytes(uint8_t *data, uint32_t len, int timeout);
     bool put_bytes(uint8_t *data, uint32_t len, int timeout);
 
   private:
+#ifdef _LINUX_
+    int _iHandle;
+#else
     int _iAddr;
+#endif
+
 };
 
 class rpc_i2c_slave : public rpc_slave
@@ -137,20 +151,36 @@ class rpc_i2c_slave : public rpc_slave
 class rpc_uart_master : public rpc_master
 {
   public:
+#ifdef _LINUX_
+    rpc_uart_master(char *port_name, int speed);
+#else
     rpc_uart_master(unsigned long speed);
+#endif
     bool get_bytes(uint8_t *data, uint32_t len, int timeout);
     bool put_bytes(uint8_t *data, uint32_t len, int timeout);
+#ifdef _LINUX_
+  private:
+    int _iHandle;
+#endif
 };
 
 class rpc_uart_slave : public rpc_slave
 {
   public:
+#ifdef _LINUX_
+    rpc_uart_slave(char *port_name, int speed);
+#else
     rpc_uart_slave(unsigned long speed);
+#endif
     bool get_bytes(uint8_t *data, uint32_t len, int timeout);
     bool put_bytes(uint8_t *data, uint32_t len, int timeout);
+#ifdef _LINUX_
+  private:
+    int _iHandle;
+#endif
 };
 
-#ifndef HAL_ESP32_HAL_H_
+#if !defined( HAL_ESP32_HAL_H_ ) && !defined( _LINUX_ )
 class rpc_softuart_master : public rpc_master
 {
   public:
@@ -172,17 +202,25 @@ class rpc_softuart_slave : public rpc_slave
   private:
     SoftwareSerial *_sserial;
 };
-#endif // !ESP32
+#endif // !ESP32 && !LINUX
 
 class rpc_spi_master : public rpc_master
 {
   public:
+#ifdef _LINUX_
+    rpc_spi_master(int iBus, int iSpeed);
+#else
     rpc_spi_master(unsigned long speed);
+#endif
     bool get_bytes(uint8_t *data, uint32_t len, int timeout);
     bool put_bytes(uint8_t *data, uint32_t len, int timeout);
     
   private:
     unsigned long _speed;
+#ifdef _LINUX_
+    int _iHandle;
+    static struct spi_ioc_transfer xfer;
+#endif
 };
 
 class rpc_spi_slave : public rpc_slave
@@ -194,6 +232,10 @@ class rpc_spi_slave : public rpc_slave
 
   private:
     unsigned long _speed;
+#ifdef _LINUX_
+    int _iHandle;
+    static struct spi_ioc_transfer xfer;
+#endif
 };
 
 #endif // __ARDUINO_RPC__
