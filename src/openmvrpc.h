@@ -13,12 +13,6 @@
 #include <SPI.h>
 #include <Wire.h>
 
-#ifdef __AVR__
-#define MAX_CALLBACKS 16
-#else
-#define MAX_CALLBACKS 32
-#endif
-
 namespace openmv {
 
 typedef void (*rpc_callback_t)(uint8_t *in_data, size_t in_data_len, uint8_t **out_data, size_t *out_data_len);
@@ -132,7 +126,7 @@ private:
 class rpc_slave : public rpc
 {
 public:
-    rpc_slave(uint8_t *buff, size_t buff_len);
+    rpc_slave(uint8_t *buff, size_t buff_len, rpc_callback_entry_t *callback_dict, size_t callback_dict_len);
     ~rpc_slave() {}
     bool register_callback(const char *name, rpc_callback_t callback);
     void schedule_callback(rpc_plain_callback_t callback);
@@ -143,8 +137,9 @@ protected:
     const unsigned long _get_short_timeout_reset = 2;
 private:
     rpc_slave(const rpc_slave &);
-    rpc_callback_entry_t __dict[MAX_CALLBACKS] = {};
-    size_t __dict_len = 0;
+    rpc_callback_entry_t *__dict;
+    size_t __dict_len;
+    size_t __dict_alloced = 0;
     rpc_plain_callback_t __schedule_cb = NULL;
     rpc_plain_callback_t __loop_cb = NULL;
     uint8_t __in_command_header_buf[12];
@@ -159,7 +154,8 @@ private:
 class rpc_can_master : public rpc_master
 {
 public:
-    rpc_can_master(uint8_t *buff, size_t buff_len, long message_id=0x7FF, long bit_rate=250E3);
+    rpc_can_master(uint8_t *buff, size_t buff_len,
+                   long message_id=0x7FF, long bit_rate=250E3);
     ~rpc_can_master();
     virtual void _flush() override;
     virtual bool get_bytes(uint8_t *buff, size_t size, unsigned long timeout) override;
@@ -174,7 +170,9 @@ private:
 class rpc_can_slave : public rpc_slave
 {
 public:
-    rpc_can_slave(uint8_t *buff, size_t buff_len, long message_id=0x7FF, long bit_rate=250E3);
+    rpc_can_slave(uint8_t *buff, size_t buff_len,
+                  rpc_callback_entry_t *callback_dict, size_t callback_dict_len,
+                  long message_id=0x7FF, long bit_rate=250E3);
     ~rpc_can_slave();
     virtual void _flush() override;
     virtual bool get_bytes(uint8_t *buff, size_t size, unsigned long timeout) override;
@@ -189,7 +187,8 @@ private:
 class rpc_i2c_master : public rpc_master
 {
 public:
-    rpc_i2c_master(uint8_t *buff, size_t buff_len, int slave_addr=0x12, unsigned long rate=100000);
+    rpc_i2c_master(uint8_t *buff, size_t buff_len,
+                   int slave_addr=0x12, unsigned long rate=100000);
     ~rpc_i2c_master() {}
     virtual void _flush() override;
     virtual bool get_bytes(uint8_t *buff, size_t size, unsigned long timeout) override;
@@ -205,7 +204,9 @@ private:
 class rpc_i2c_slave : public rpc_slave
 {
 public:
-    rpc_i2c_slave(uint8_t *buff, size_t buff_len, int slave_addr=0x12);
+    rpc_i2c_slave(uint8_t *buff, size_t buff_len, 
+                  rpc_callback_entry_t *callback_dict, size_t callback_dict_len,
+                  int slave_addr=0x12);
     ~rpc_i2c_slave() {}
     virtual void _flush() override;
     virtual bool get_bytes(uint8_t *buff, size_t size, unsigned long timeout) override;
@@ -218,7 +219,8 @@ private:
 class rpc_spi_master : public rpc_master
 {
 public:
-    rpc_spi_master(uint8_t *buff, size_t buff_len, unsigned long cs_pin, unsigned long freq=1000000, unsigned long spi_mode=SPI_MODE2);
+    rpc_spi_master(uint8_t *buff, size_t buff_len,
+                   unsigned long cs_pin, unsigned long freq=1000000, unsigned long spi_mode=SPI_MODE2);
     ~rpc_spi_master();
     virtual bool get_bytes(uint8_t *buff, size_t size, unsigned long timeout) override;
     virtual bool put_bytes(uint8_t *data, size_t size, unsigned long timeout) override;
@@ -234,7 +236,8 @@ private:
 class rpc_hardware_serial##name##_uart_master : public rpc_master \
 { \
 public: \
-    rpc_hardware_serial##name##_uart_master(uint8_t *buff, size_t buff_len, unsigned long baudrate=115200); \
+    rpc_hardware_serial##name##_uart_master(uint8_t *buff, size_t buff_len, \
+                                            unsigned long baudrate=115200); \
     ~rpc_hardware_serial##name##_uart_master(); \
     virtual void _flush() override; \
     virtual bool get_bytes(uint8_t *buff, size_t size, unsigned long timeout) override; \
@@ -267,7 +270,9 @@ RPC_HARDWARE_SERIAL_UART_MASTER()
 class rpc_hardware_serial##name##_uart_slave : public rpc_slave \
 { \
 public: \
-    rpc_hardware_serial##name##_uart_slave(uint8_t *buff, size_t buff_len, unsigned long baudrate=115200); \
+    rpc_hardware_serial##name##_uart_slave(uint8_t *buff, size_t buff_len, \
+                                           rpc_callback_entry_t *callback_dict, size_t callback_dict_len, \
+                                           unsigned long baudrate=115200); \
     ~rpc_hardware_serial##name##_uart_slave(); \
     virtual void _flush() override; \
     virtual bool get_bytes(uint8_t *buff, size_t size, unsigned long timeout) override; \
@@ -299,7 +304,8 @@ RPC_HARDWARE_SERIAL_UART_SLAVE()
 class rpc_software_serial_uart_master : public rpc_master
 {
 public:
-    rpc_software_serial_uart_master(uint8_t *buff, size_t buff_len, unsigned long rx_pin=2, unsigned long tx_pin=3, unsigned long baudrate=19200);
+    rpc_software_serial_uart_master(uint8_t *buff, size_t buff_len,
+                                    unsigned long rx_pin=2, unsigned long tx_pin=3, unsigned long baudrate=19200);
     ~rpc_software_serial_uart_master() { }
     virtual void _flush() override;
     virtual bool get_bytes(uint8_t *buff, size_t size, unsigned long timeout) override;
@@ -312,7 +318,9 @@ private:
 class rpc_software_serial_uart_slave : public rpc_slave
 {
 public:
-    rpc_software_serial_uart_slave(uint8_t *buff, size_t buff_len, unsigned long rx_pin=2, unsigned long tx_pin=3, unsigned long baudrate=19200);
+    rpc_software_serial_uart_slave(uint8_t *buff, size_t buff_len,
+                                   rpc_callback_entry_t *callback_dict, size_t callback_dict_len,
+                                   unsigned long rx_pin=2, unsigned long tx_pin=3, unsigned long baudrate=19200);
     ~rpc_software_serial_uart_slave() { }
     virtual void _flush() override;
     virtual bool get_bytes(uint8_t *buff, size_t size, unsigned long timeout) override;

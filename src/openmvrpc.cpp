@@ -438,8 +438,10 @@ bool rpc_master::call(const char *name,
     return result;
 }
 
-rpc_slave::rpc_slave(uint8_t *buff, size_t buff_len) : rpc(buff, buff_len)
+rpc_slave::rpc_slave(uint8_t *buff, size_t buff_len, rpc_callback_entry_t *callback_dict, size_t callback_dict_len) : rpc(buff, buff_len)
 {
+    __dict = callback_dict;
+    __dict_len = callback_dict_len;
     _set_packet(__out_command_header_ack, _COMMAND_HEADER_PACKET_MAGIC, NULL, 0);
     _set_packet(__out_command_data_ack, _COMMAND_DATA_PACKET_MAGIC, NULL, 0);
 }
@@ -510,16 +512,16 @@ bool rpc_slave::register_callback(const char *name, rpc_callback_t callback)
 {
     uint32_t hash = _hash(name);
 
-    for (size_t i=0; i<__dict_len; i++) {
+    for (size_t i = 0; i < __dict_alloced; i++) {
         if (__dict[i].key == hash) {
             __dict[i].value = callback;
             return true;
         }
     }
 
-    if (__dict_len < MAX_CALLBACKS) {
-        __dict[__dict_len].key = hash;
-        __dict[__dict_len++].value = callback;
+    if (__dict_alloced < __dict_len) {
+        __dict[__dict_alloced].key = hash;
+        __dict[__dict_alloced++].value = callback;
         return true;
     }
 
@@ -547,7 +549,7 @@ void rpc_slave::loop(unsigned long send_timeout, unsigned long recv_timeout)
             uint8_t *out_data = NULL;
             size_t out_data_len = 0;
 
-            for (size_t i = 0; i < __dict_len; i++) {
+            for (size_t i = 0; i < __dict_alloced; i++) {
                 if ((__dict[i].key == command) && __dict[i].value) {
                     __dict[i].value(data, size, &out_data, &out_data_len);
                     break;
@@ -562,7 +564,9 @@ void rpc_slave::loop(unsigned long send_timeout, unsigned long recv_timeout)
     }
 }
 
-rpc_can_master::rpc_can_master(uint8_t *buff, size_t buff_len, long message_id, long bit_rate) : rpc_master(buff, buff_len) 
+rpc_can_master::rpc_can_master(uint8_t *buff, size_t buff_len, long message_id,
+                               long bit_rate)
+    : rpc_master(buff, buff_len) 
 {
     __message_id = message_id;
     CAN.begin(bit_rate);
@@ -611,7 +615,10 @@ bool rpc_can_master::put_bytes(uint8_t *data, size_t size, unsigned long timeout
     return i == size;
 }
 
-rpc_can_slave::rpc_can_slave(uint8_t *buff, size_t buff_len, long message_id, long bit_rate) : rpc_slave(buff, buff_len) 
+rpc_can_slave::rpc_can_slave(uint8_t *buff, size_t buff_len,
+                             rpc_callback_entry_t *callback_dict, size_t callback_dict_len,
+                             long message_id, long bit_rate)
+    : rpc_slave(buff, buff_len, callback_dict, callback_dict_len) 
 {
     __message_id = message_id;
     CAN.begin(bit_rate);
@@ -658,7 +665,9 @@ bool rpc_can_slave::put_bytes(uint8_t *data, size_t size, unsigned long timeout)
     return i == size;
 }
 
-rpc_i2c_master::rpc_i2c_master(uint8_t *buff, size_t buff_len, int slave_addr, unsigned long rate) : rpc_master(buff, buff_len) 
+rpc_i2c_master::rpc_i2c_master(uint8_t *buff, size_t buff_len, int slave_addr,
+                               unsigned long rate)
+    : rpc_master(buff, buff_len) 
 {
     __slave_addr = slave_addr;
     __rate = rate;
@@ -714,7 +723,10 @@ bool rpc_i2c_master::put_bytes(uint8_t *data, size_t size, unsigned long timeout
     return ok;
 }
 
-rpc_i2c_slave::rpc_i2c_slave(uint8_t *buff, size_t buff_len, int slave_addr) : rpc_slave(buff, buff_len) 
+rpc_i2c_slave::rpc_i2c_slave(uint8_t *buff, size_t buff_len,
+                             rpc_callback_entry_t *callback_dict, size_t callback_dict_len,
+                             int slave_addr)
+    : rpc_slave(buff, buff_len, callback_dict, callback_dict_len) 
 {
     __slave_addr = slave_addr;
     _stream_writer_queue_depth_max = 1;
@@ -753,7 +765,9 @@ bool rpc_i2c_slave::put_bytes(uint8_t *data, size_t size, unsigned long timeout)
     return i == size;
 }
 
-rpc_spi_master::rpc_spi_master(uint8_t *buff, size_t buff_len, unsigned long cs_pin, unsigned long freq, unsigned long spi_mode) : rpc_master(buff, buff_len)
+rpc_spi_master::rpc_spi_master(uint8_t *buff, size_t buff_len,
+                               unsigned long cs_pin, unsigned long freq, unsigned long spi_mode)
+    : rpc_master(buff, buff_len)
 {
     pinMode(__cs_pin, OUTPUT);
     __cs_pin = cs_pin;
@@ -796,7 +810,9 @@ bool rpc_spi_master::put_bytes(uint8_t *data, size_t size, unsigned long timeout
 }
 
 #define RPC_HARDWARE_SERIAL_UART_MASTER_IMPLEMENTATION(name) \
-rpc_hardware_serial##name##_uart_master::rpc_hardware_serial##name##_uart_master(uint8_t *buff, size_t buff_len, unsigned long baudrate) : rpc_master(buff, buff_len) \
+rpc_hardware_serial##name##_uart_master::rpc_hardware_serial##name##_uart_master(uint8_t *buff, size_t buff_len, \
+                                                                                 unsigned long baudrate) \
+    : rpc_master(buff, buff_len) \
 { \
     Serial##name.begin(baudrate); \
 } \
@@ -846,7 +862,10 @@ RPC_HARDWARE_SERIAL_UART_MASTER_IMPLEMENTATION()
 #endif
 
 #define RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION(name) \
-rpc_hardware_serial##name##_uart_slave::rpc_hardware_serial##name##_uart_slave(uint8_t *buff, size_t buff_len, unsigned long baudrate) : rpc_slave(buff, buff_len) \
+rpc_hardware_serial##name##_uart_slave::rpc_hardware_serial##name##_uart_slave(uint8_t *buff, size_t buff_len, \
+                                                                               rpc_callback_entry_t *callback_dict, size_t callback_dict_len, \
+                                                                               unsigned long baudrate) \
+    : rpc_slave(buff, buff_len, callback_dict, callback_dict_len) \
 { \
     Serial##name.begin(baudrate); \
 } \
@@ -893,7 +912,9 @@ RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION(3)
 RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION()
 #endif
 
-rpc_software_serial_uart_master::rpc_software_serial_uart_master(uint8_t *buff, size_t buff_len, unsigned long rx_pin, unsigned long tx_pin, unsigned long baudrate) : rpc_master(buff, buff_len), __serial(rx_pin, tx_pin)
+rpc_software_serial_uart_master::rpc_software_serial_uart_master(uint8_t *buff, size_t buff_len,
+                                                                 unsigned long rx_pin, unsigned long tx_pin, unsigned long baudrate)
+    : rpc_master(buff, buff_len), __serial(rx_pin, tx_pin)
 {
     __serial.begin(baudrate);
 }
@@ -930,7 +951,10 @@ bool rpc_software_serial_uart_master::put_bytes(uint8_t *buff, size_t size, unsi
     return __serial.write(buff, size) == size;
 }
 
-rpc_software_serial_uart_slave::rpc_software_serial_uart_slave(uint8_t *buff, size_t buff_len, unsigned long rx_pin, unsigned long tx_pin, unsigned long baudrate) : rpc_slave(buff, buff_len), __serial(rx_pin, tx_pin)
+rpc_software_serial_uart_slave::rpc_software_serial_uart_slave(uint8_t *buff, size_t buff_len,
+                                                               rpc_callback_entry_t *callback_dict, size_t callback_dict_len,
+                                                               unsigned long rx_pin, unsigned long tx_pin, unsigned long baudrate)
+    : rpc_slave(buff, buff_len, callback_dict, callback_dict_len), __serial(rx_pin, tx_pin)
 {
     __serial.begin(baudrate);
 }
