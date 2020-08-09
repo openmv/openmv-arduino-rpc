@@ -15,25 +15,37 @@
 
 namespace openmv {
 
-typedef void (*rpc_callback_t)(uint8_t *in_data, size_t in_data_len, uint8_t **out_data, size_t *out_data_len);
-typedef void (*rpc_plain_callback_t)();
+typedef void (*rpc_callback_t)();
+typedef void (*rpc_callback_with_args_t)(void *in_data, size_t in_data_len);
+typedef void (*rpc_callback_returns_result_t)(void **out_data, size_t *out_data_len);
+typedef size_t (*rpc_callback_returns_result_no_copy_t)(void *out_data);
+typedef void (*rpc_callback_with_args_returns_result_t)(void *in_data, size_t in_data_len, void **out_data, size_t *out_data_len);
+typedef size_t (*rpc_callback_with_args_returns_result_no_copy_t)(void *in_data, size_t in_data_len, void *out_data);
+typedef bool (*rpc_stream_reader_callback_t)(uint8_t *in_data, uint32_t in_data_len);
+typedef bool (*rpc_stream_writer_callback_t)(uint8_t **out_data, uint32_t *out_data_len);
 
-typedef struct rpc_callback_entry {
-    uint32_t key;
-    rpc_callback_t value;
-} rpc_callback_entry_t;
+extern uint8_t *__buff;
+extern size_t __buff_len;
 
-typedef void (*rpc_stream_reader_callback_t)(uint8_t *in_data, uint32_t in_data_len);
-typedef void (*rpc_stream_writer_callback_t)(uint8_t **out_data, uint32_t *out_data_len);
+template <int size> class rpc_scratch_buffer
+{
+public:
+    rpc_scratch_buffer() { __buff = buff; __buff_len = sizeof(buff); }
+    ~rpc_scratch_buffer() {}
+    size_t buffer_size() { return size; }
+private:
+    rpc_scratch_buffer(const rpc_scratch_buffer &);
+    uint8_t buff[size + 4];
+};
 
 class rpc
 {
 public:
-    rpc(uint8_t *buff, size_t buff_len);
+    rpc() {}
     ~rpc() {}
     virtual bool get_bytes(uint8_t *buff, size_t size, unsigned long timeout) = 0;
     virtual bool put_bytes(uint8_t *data, size_t size, unsigned long timeout) = 0;
-    void stream_reader(rpc_stream_reader_callback_t callback, unsigned long queue_depth = 1, unsigned long read_timeout = 5000);
+    void stream_reader(rpc_stream_reader_callback_t callback, uint32_t queue_depth = 1, unsigned long read_timeout = 5000);
     void stream_writer(rpc_stream_writer_callback_t callback, unsigned long write_timeout = 5000);
 protected:
     const uint16_t _COMMAND_HEADER_PACKET_MAGIC = 0x1209;
@@ -54,18 +66,47 @@ protected:
     virtual void _flush() {}
     virtual bool _stream_get_bytes(uint8_t *buff, size_t size, unsigned long timeout);
     virtual bool _stream_put_bytes(uint8_t *data, size_t size, unsigned long timeout);
-    uint8_t *_buff;
-    size_t _buff_len;
-    unsigned long _stream_writer_queue_depth_max;
+    virtual uint32_t _stream_writer_queue_depth_max() { return 255; }
 private:
     rpc(const rpc &);
     uint16_t __crc_16(uint8_t *data, size_t size);
 };
 
+typedef enum rpc_callback_type {
+    __CALLBACK,
+    __CALLBACK_WITH_ARGS,
+    __CALLBACK_RETURNS_RESULT,
+    __CALLBACK_RETURNS_RESULT_NO_COPY,
+    __CALLBACK_WITH_ARGS_RETURNS_RESULT,
+    __CALLBACK_WITH_ARGS_RETURNS_RESULT_NO_COPY,
+} rpc_callback_type_t;
+
+typedef struct rpc_callback_entry {
+    rpc *object;
+    uint32_t key;
+    rpc_callback_type_t type;
+    void *value;
+} rpc_callback_entry_t;
+
+extern rpc_callback_entry_t *__dict;
+extern size_t __dict_len;
+extern size_t __dict_alloced;
+
+template <int size> class rpc_callback_buffer
+{
+public:
+    rpc_callback_buffer() { __dict = buff; __dict_len = sizeof(buff); __dict_alloced = 0; }
+    ~rpc_callback_buffer() {}
+    size_t buffer_size() { return size; }
+private:
+    rpc_callback_buffer(const rpc_callback_buffer &);
+    rpc_callback_entry_t buff[size];
+};
+
 class rpc_master : public rpc
 {
 public:
-    rpc_master(uint8_t *buff, size_t buff_len);
+    rpc_master() : rpc() {}
     ~rpc_master() {}
     bool call_no_copy_no_args(const __FlashStringHelper *name,
                               void **result_data=NULL, size_t *result_data_len=NULL,
@@ -126,22 +167,34 @@ private:
 class rpc_slave : public rpc
 {
 public:
-    rpc_slave(uint8_t *buff, size_t buff_len, rpc_callback_entry_t *callback_dict, size_t callback_dict_len);
+    rpc_slave() : rpc() {}
     ~rpc_slave() {}
+    bool register_callback(const __FlashStringHelper *name, rpc_callback_t callback);
+    bool register_callback(const String &name, rpc_callback_t callback);
     bool register_callback(const char *name, rpc_callback_t callback);
-    void schedule_callback(rpc_plain_callback_t callback);
-    void setup_loop_callback(rpc_plain_callback_t callback);
+    bool register_callback(const __FlashStringHelper *name, rpc_callback_with_args_t callback);
+    bool register_callback(const String &name, rpc_callback_with_args_t callback);
+    bool register_callback(const char *name, rpc_callback_with_args_t callback);
+    bool register_callback(const __FlashStringHelper *name, rpc_callback_returns_result_t callback);
+    bool register_callback(const String &name, rpc_callback_returns_result_t callback);
+    bool register_callback(const char *name, rpc_callback_returns_result_t callback);
+    bool register_callback(const __FlashStringHelper *name, rpc_callback_returns_result_no_copy_t callback);
+    bool register_callback(const String &name, rpc_callback_returns_result_no_copy_t callback);
+    bool register_callback(const char *name, rpc_callback_returns_result_no_copy_t callback);
+    bool register_callback(const __FlashStringHelper *name, rpc_callback_with_args_returns_result_t callback);
+    bool register_callback(const String &name, rpc_callback_with_args_returns_result_t callback);
+    bool register_callback(const char *name, rpc_callback_with_args_returns_result_t callback);
+    bool register_callback(const __FlashStringHelper *name, rpc_callback_with_args_returns_result_no_copy_t callback);
+    bool register_callback(const String &name, rpc_callback_with_args_returns_result_no_copy_t callback);
+    bool register_callback(const char *name, rpc_callback_with_args_returns_result_no_copy_t callback);
+    void schedule_callback(rpc_callback_t callback);
     void loop(unsigned long send_timeout=1000, unsigned long recv_timeout=1000);
 protected:
     const unsigned long _put_short_timeout_reset = 2;
     const unsigned long _get_short_timeout_reset = 2;
 private:
     rpc_slave(const rpc_slave &);
-    rpc_callback_entry_t *__dict;
-    size_t __dict_len;
-    size_t __dict_alloced = 0;
-    rpc_plain_callback_t __schedule_cb = NULL;
-    rpc_plain_callback_t __loop_cb = NULL;
+    rpc_callback_t __schedule_cb = NULL;
     uint8_t __in_command_header_buf[12];
     uint8_t __out_command_header_ack[4];
     uint8_t __out_command_data_ack[4];
@@ -149,19 +202,19 @@ private:
     uint8_t __in_response_data_buf[4];
     bool __get_command(uint32_t *command, uint8_t **data, size_t *size, unsigned long timeout);
     bool __put_result(uint8_t *data, size_t size, unsigned long timeout);
+    bool __register_callback(uint32_t hash, rpc_callback_type_t type, void *value);
 };
 
 class rpc_can_master : public rpc_master
 {
 public:
-    rpc_can_master(uint8_t *buff, size_t buff_len,
-                   long message_id=0x7FF, long bit_rate=250E3);
+    rpc_can_master(int message_id=0x7FF, long bit_rate=250E3);
     ~rpc_can_master();
     virtual void _flush() override;
     virtual bool get_bytes(uint8_t *buff, size_t size, unsigned long timeout) override;
     virtual bool put_bytes(uint8_t *data, size_t size, unsigned long timeout) override;
-    void set_message_id(long message_id) { __message_id = message_id; }
-    long get_message_id() { return __message_id; }
+    void set_message_id(int message_id) { __message_id = message_id; }
+    int get_message_id() { return __message_id; }
 private:
     long __message_id;
     rpc_can_master(const rpc_can_master &);
@@ -170,15 +223,13 @@ private:
 class rpc_can_slave : public rpc_slave
 {
 public:
-    rpc_can_slave(uint8_t *buff, size_t buff_len,
-                  rpc_callback_entry_t *callback_dict, size_t callback_dict_len,
-                  long message_id=0x7FF, long bit_rate=250E3);
+    rpc_can_slave(int message_id=0x7FF, long bit_rate=250E3);
     ~rpc_can_slave();
     virtual void _flush() override;
     virtual bool get_bytes(uint8_t *buff, size_t size, unsigned long timeout) override;
     virtual bool put_bytes(uint8_t *data, size_t size, unsigned long timeout) override;
-    void set_message_id(long message_id) { __message_id = message_id; }
-    long get_message_id() { return __message_id; }
+    void set_message_id(int message_id) { __message_id = message_id; }
+    int get_message_id() { return __message_id; }
 private:
     long __message_id;
     rpc_can_slave(const rpc_can_slave &);
@@ -187,47 +238,49 @@ private:
 class rpc_i2c_master : public rpc_master
 {
 public:
-    rpc_i2c_master(uint8_t *buff, size_t buff_len,
-                   int slave_addr=0x12, unsigned long rate=100000);
+    rpc_i2c_master(uint8_t slave_addr=0x12, uint32_t rate=100000) : rpc_master(), __slave_addr(slave_addr), __rate(rate) {}
     ~rpc_i2c_master() {}
     virtual void _flush() override;
     virtual bool get_bytes(uint8_t *buff, size_t size, unsigned long timeout) override;
     virtual bool put_bytes(uint8_t *data, size_t size, unsigned long timeout) override;
-    void set_slave_addr(int slave_addr) { __slave_addr = slave_addr; }
-    int get_slave_addr() { return __slave_addr; }
+    void set_slave_addr(uint8_t slave_addr) { __slave_addr = slave_addr; }
+    uint8_t get_slave_addr() { return __slave_addr; }
+protected:
+    virtual uint32_t _stream_writer_queue_depth_max() override { return 1; }
 private:
-    int __slave_addr;
-    unsigned long __rate;
+    uint8_t __slave_addr;
+    uint32_t __rate;
     rpc_i2c_master(const rpc_i2c_master &);
 };
 
 class rpc_i2c_slave : public rpc_slave
 {
 public:
-    rpc_i2c_slave(uint8_t *buff, size_t buff_len, 
-                  rpc_callback_entry_t *callback_dict, size_t callback_dict_len,
-                  int slave_addr=0x12);
+    rpc_i2c_slave(uint8_t slave_addr=0x12) : __slave_addr(slave_addr) {}
     ~rpc_i2c_slave() {}
     virtual void _flush() override;
     virtual bool get_bytes(uint8_t *buff, size_t size, unsigned long timeout) override;
     virtual bool put_bytes(uint8_t *data, size_t size, unsigned long timeout) override;
+protected:
+    virtual uint32_t _stream_writer_queue_depth_max() override { return 1; }
 private:
-    int __slave_addr;
+    uint8_t __slave_addr;
     rpc_i2c_slave(const rpc_i2c_slave &);
 };
 
 class rpc_spi_master : public rpc_master
 {
 public:
-    rpc_spi_master(uint8_t *buff, size_t buff_len,
-                   unsigned long cs_pin, unsigned long freq=1000000, unsigned long spi_mode=SPI_MODE2);
+    rpc_spi_master(uint8_t cs_pin, uint32_t freq=1000000, uint8_t spi_mode=SPI_MODE2);
     ~rpc_spi_master();
     virtual bool get_bytes(uint8_t *buff, size_t size, unsigned long timeout) override;
     virtual bool put_bytes(uint8_t *data, size_t size, unsigned long timeout) override;
-    void set_cs_pin(unsigned long cs_pin) { pinMode(__cs_pin, INPUT); __cs_pin = cs_pin; pinMode(__cs_pin, OUTPUT); }
-    unsigned long get_cs_pin() { return __cs_pin; }
+    void set_cs_pin(uint8_t cs_pin) { pinMode(__cs_pin, INPUT); digitalWrite(__cs_pin, LOW); __cs_pin = cs_pin; digitalWrite(__cs_pin, HIGH); pinMode(__cs_pin, OUTPUT); }
+    uint8_t get_cs_pin() { return __cs_pin; }
+protected:
+    virtual uint32_t _stream_writer_queue_depth_max() override { return 1; }
 private:
-    unsigned long __cs_pin;
+    uint8_t __cs_pin;
     SPISettings __settings;
     rpc_spi_master(const rpc_spi_master &);
 };
@@ -236,8 +289,7 @@ private:
 class rpc_hardware_serial##name##_uart_master : public rpc_master \
 { \
 public: \
-    rpc_hardware_serial##name##_uart_master(uint8_t *buff, size_t buff_len, \
-                                            unsigned long baudrate=115200); \
+    rpc_hardware_serial##name##_uart_master(unsigned long baudrate=115200); \
     ~rpc_hardware_serial##name##_uart_master(); \
     virtual void _flush() override; \
     virtual bool get_bytes(uint8_t *buff, size_t size, unsigned long timeout) override; \
@@ -270,9 +322,7 @@ RPC_HARDWARE_SERIAL_UART_MASTER()
 class rpc_hardware_serial##name##_uart_slave : public rpc_slave \
 { \
 public: \
-    rpc_hardware_serial##name##_uart_slave(uint8_t *buff, size_t buff_len, \
-                                           rpc_callback_entry_t *callback_dict, size_t callback_dict_len, \
-                                           unsigned long baudrate=115200); \
+    rpc_hardware_serial##name##_uart_slave(unsigned long baudrate=115200); \
     ~rpc_hardware_serial##name##_uart_slave(); \
     virtual void _flush() override; \
     virtual bool get_bytes(uint8_t *buff, size_t size, unsigned long timeout) override; \
@@ -304,9 +354,8 @@ RPC_HARDWARE_SERIAL_UART_SLAVE()
 class rpc_software_serial_uart_master : public rpc_master
 {
 public:
-    rpc_software_serial_uart_master(uint8_t *buff, size_t buff_len,
-                                    unsigned long rx_pin=2, unsigned long tx_pin=3, unsigned long baudrate=19200);
-    ~rpc_software_serial_uart_master() { }
+    rpc_software_serial_uart_master(uint8_t rx_pin=2, uint8_t tx_pin=3, long baudrate=19200);
+    ~rpc_software_serial_uart_master() {}
     virtual void _flush() override;
     virtual bool get_bytes(uint8_t *buff, size_t size, unsigned long timeout) override;
     virtual bool put_bytes(uint8_t *data, size_t size, unsigned long timeout) override;
@@ -318,10 +367,8 @@ private:
 class rpc_software_serial_uart_slave : public rpc_slave
 {
 public:
-    rpc_software_serial_uart_slave(uint8_t *buff, size_t buff_len,
-                                   rpc_callback_entry_t *callback_dict, size_t callback_dict_len,
-                                   unsigned long rx_pin=2, unsigned long tx_pin=3, unsigned long baudrate=19200);
-    ~rpc_software_serial_uart_slave() { }
+    rpc_software_serial_uart_slave(uint8_t rx_pin=2, uint8_t tx_pin=3, long baudrate=19200);
+    ~rpc_software_serial_uart_slave() {}
     virtual void _flush() override;
     virtual bool get_bytes(uint8_t *buff, size_t size, unsigned long timeout) override;
     virtual bool put_bytes(uint8_t *data, size_t size, unsigned long timeout) override;

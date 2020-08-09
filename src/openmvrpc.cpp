@@ -29,6 +29,13 @@
 
 using namespace openmv;
 
+uint8_t *openmv::__buff = NULL;
+size_t openmv::__buff_len = 0;
+
+rpc_callback_entry_t *openmv::__dict = NULL;
+size_t openmv::__dict_len = 0;
+size_t openmv::__dict_alloced = 0;
+
 static unsigned long unpack_unsigned_long(uint8_t *data)
 {
     unsigned long ret;
@@ -148,13 +155,6 @@ uint32_t rpc::_hash(const char *name)
     return h;
 }
 
-rpc::rpc(uint8_t *buff, size_t buff_len)
-{
-    _buff = buff;
-    _buff_len = buff_len;
-    _stream_writer_queue_depth_max = 255;
-}
-
 bool rpc::_get_packet(uint16_t magic_value, uint8_t *buff, size_t size, unsigned long timeout)
 {
     if (!get_bytes(buff, size, timeout)) return false;
@@ -167,13 +167,13 @@ void rpc::_set_packet(uint8_t *buff, uint16_t magic_value, uint8_t *data, size_t
 {
     buff[0] = magic_value;
     buff[1] = magic_value >> 8;
-    if (size) memcpy(buff + 2, data, size);
+    if (((buff + 2) != data) && size) memcpy(buff + 2, data, size);
     uint16_t crc = __crc_16(buff, size + 2);
     buff[size + 2] = crc;
     buff[size + 3] = crc >> 8;
 }
 
-void rpc::stream_reader(rpc_stream_reader_callback_t callback, unsigned long queue_depth, unsigned long read_timeout)
+void rpc::stream_reader(rpc_stream_reader_callback_t callback, uint32_t queue_depth, unsigned long read_timeout)
 {
     uint8_t packet[8];
     _set_packet(packet, 0xEDF6, (uint8_t *) &queue_depth, sizeof(queue_depth));
@@ -185,10 +185,10 @@ void rpc::stream_reader(rpc_stream_reader_callback_t callback, unsigned long que
         uint16_t magic = packet[0] | (packet[1] << 8);
         uint16_t crc = packet[6] | (packet[7] << 8);
         if ((magic != 0x542E) && (crc != __crc_16(packet, sizeof(packet) - 2))) return;
-        unsigned long size = unpack_unsigned_long(packet + 2);
-        if (_buff_len < size) return;
-        if (!_stream_get_bytes(_buff, size, read_timeout)) return;
-        if (callback) callback(_buff, size);
+        uint32_t size = unpack_unsigned_long(packet + 2);
+        if (__buff_len < size) return;
+        if (!_stream_get_bytes(__buff, size, read_timeout)) return;
+        if (!callback(__buff, size)) return;
         if (!_stream_put_bytes(&tx_lfsr, sizeof(tx_lfsr), 1000)) return;
         tx_lfsr = (tx_lfsr >> 1) ^ ((tx_lfsr & 1) ? 0xB8 : 0x00);
     }
@@ -201,9 +201,9 @@ void rpc::stream_writer(rpc_stream_writer_callback_t callback, unsigned long wri
     uint16_t magic = packet[0] | (packet[1] << 8);
     uint16_t crc = packet[6] | (packet[7] << 8);
     if ((magic != 0xEDF6) && (crc != __crc_16(packet, sizeof(packet) - 2))) return;
-    unsigned long queue_depth = max(min(unpack_unsigned_long(packet + 2), _stream_writer_queue_depth_max), 1);
+    uint32_t queue_depth = max(min(unpack_unsigned_long(packet + 2), _stream_writer_queue_depth_max()), 1);
     uint8_t rx_lfsr = 255;
-    unsigned long credits = queue_depth;
+    uint32_t credits = queue_depth;
 
     for (;;) {
         if (credits <= (queue_depth / 2)) {
@@ -213,9 +213,9 @@ void rpc::stream_writer(rpc_stream_writer_callback_t callback, unsigned long wri
         }
 
         if (credits > 0) {
-            uint8_t *out_data;
-            uint32_t out_data_len;
-            callback(&out_data, &out_data_len);
+            uint8_t *out_data = NULL;
+            uint32_t out_data_len = 0;
+            if ((!callback(&out_data, &out_data_len)) || (!out_data) || (!out_data_len)) return;
             _set_packet(packet, 0x542E, (uint8_t *) &out_data_len, sizeof(out_data_len));
             if (!_stream_put_bytes(packet, sizeof(packet), 1000)) return;
             if (!_stream_put_bytes(out_data, out_data_len, write_timeout)) return;
@@ -234,30 +234,24 @@ bool rpc::_stream_put_bytes(uint8_t *data, size_t size, unsigned long timeout)
     return put_bytes(data, size, timeout);
 }
 
-rpc_master::rpc_master(uint8_t *buff, size_t buff_len) : rpc(buff, buff_len)
-{
-    _set_packet(__out_result_header_ack, _RESULT_HEADER_PACKET_MAGIC, NULL, 0);
-    _set_packet(__out_result_data_ack, _RESULT_DATA_PACKET_MAGIC, NULL, 0);
-}
-
 bool rpc_master::__put_command(uint32_t command, uint8_t *data, size_t size, unsigned long timeout)
 {
     const uint32_t header[2] = {command, size};
     uint8_t out_header[12];
-    if (_buff_len < (size + 4)) return false;
+    if (__buff_len < (size + 4)) return false;
     _put_short_timeout = _put_short_timeout_reset;
     _get_short_timeout = _get_short_timeout_reset;
-    _set_packet(out_header, _COMMAND_HEADER_PACKET_MAGIC, (uint8_t *) header, 8);
-    _set_packet(_buff, _COMMAND_DATA_PACKET_MAGIC, data, size);
     unsigned long start = millis();
 
     while ((millis() - start) < timeout) {
+        _set_packet(out_header, _COMMAND_HEADER_PACKET_MAGIC, (uint8_t *) header, 8); // set repeatedly because SPI.transfer() clears.
+        _set_packet(__buff, _COMMAND_DATA_PACKET_MAGIC, data, size); // set repeatedly because SPI.transfer() clears.
         _zero(__in_command_header_buf, sizeof(__in_command_header_buf));
         _zero(__in_command_data_buf, sizeof(__in_command_data_buf));
         _flush();
         put_bytes(out_header, sizeof(out_header), _put_short_timeout);
         if (_get_packet(_COMMAND_HEADER_PACKET_MAGIC, __in_command_header_buf, sizeof(__in_command_header_buf), _get_short_timeout)) {
-            put_bytes(_buff, size + 4, _put_long_timeout);
+            put_bytes(__buff, size + 4, _put_long_timeout);
             if (_get_packet(_COMMAND_DATA_PACKET_MAGIC, __in_command_data_buf, sizeof(__in_command_data_buf), _get_short_timeout)) {
                 return true;
             }
@@ -278,15 +272,17 @@ bool rpc_master::__get_result(uint8_t **data, size_t *size, unsigned long timeou
     unsigned long start = millis();
 
     while ((millis() - start) < timeout) {
+        _set_packet(__out_result_header_ack, _RESULT_HEADER_PACKET_MAGIC, NULL, 0); // set repeatedly because SPI.transfer() clears.
+        _set_packet(__out_result_data_ack, _RESULT_DATA_PACKET_MAGIC, NULL, 0); // set repeatedly because SPI.transfer() clears.
         _zero(__in_result_header_buf, sizeof(__in_result_header_buf));
         _flush();
         put_bytes(__out_result_header_ack, sizeof(__out_result_header_ack), _put_short_timeout);
         if (_get_packet(_RESULT_HEADER_PACKET_MAGIC, __in_result_header_buf, sizeof(__in_result_header_buf), _get_short_timeout)) {
             uint32_t in_result_data_buf_len = unpack_unsigned_long(__in_result_header_buf + 2) + 4;
-            if (_buff_len < in_result_data_buf_len) return false;
+            if (__buff_len < in_result_data_buf_len) return false;
             put_bytes(__out_result_data_ack, sizeof(__out_result_data_ack), _put_short_timeout);
-            if (_get_packet(_RESULT_DATA_PACKET_MAGIC, _buff, in_result_data_buf_len, _get_long_timeout)) {
-                *data = _buff + 2;
+            if (_get_packet(_RESULT_DATA_PACKET_MAGIC, __buff, in_result_data_buf_len, _get_long_timeout)) {
+                *data = __buff + 2;
                 *size = in_result_data_buf_len - 4;
                 return true;
             }
@@ -438,32 +434,26 @@ bool rpc_master::call(const char *name,
     return result;
 }
 
-rpc_slave::rpc_slave(uint8_t *buff, size_t buff_len, rpc_callback_entry_t *callback_dict, size_t callback_dict_len) : rpc(buff, buff_len)
-{
-    __dict = callback_dict;
-    __dict_len = callback_dict_len;
-    _set_packet(__out_command_header_ack, _COMMAND_HEADER_PACKET_MAGIC, NULL, 0);
-    _set_packet(__out_command_data_ack, _COMMAND_DATA_PACKET_MAGIC, NULL, 0);
-}
-
 bool rpc_slave::__get_command(uint32_t *command, uint8_t **data, size_t *size, unsigned long timeout)
 {
+    _set_packet(__out_command_data_ack, _COMMAND_DATA_PACKET_MAGIC, NULL, 0);
     _put_short_timeout = _put_short_timeout_reset;
     _get_short_timeout = _get_short_timeout_reset;
     unsigned long start = millis();
 
     while ((millis() - start) < timeout) {
+        _set_packet(__out_command_header_ack, _COMMAND_HEADER_PACKET_MAGIC, NULL, 0); // set repeatedly because SPI.transfer() clears.
         _zero(__in_command_header_buf, sizeof(__in_command_header_buf));
         _flush();
         if (_get_packet(_COMMAND_HEADER_PACKET_MAGIC, __in_command_header_buf, sizeof(__in_command_header_buf), _get_short_timeout)) {
             uint32_t cmd = unpack_unsigned_long(__in_command_header_buf + 2);
             uint32_t in_command_data_buf_len = unpack_unsigned_long(__in_command_header_buf + 6) + 4;
-            if (_buff_len < in_command_data_buf_len) return false;
+            if (__buff_len < in_command_data_buf_len) return false;
             put_bytes(__out_command_header_ack, sizeof(__out_command_header_ack), _put_short_timeout);
-            if (_get_packet(_COMMAND_DATA_PACKET_MAGIC, _buff, in_command_data_buf_len, _get_long_timeout)) {
+            if (_get_packet(_COMMAND_DATA_PACKET_MAGIC, __buff, in_command_data_buf_len, _get_long_timeout)) {
                put_bytes(__out_command_data_ack, sizeof(__out_command_data_ack), _put_short_timeout);
                *command = cmd;
-               *data = _buff + 2;
+               *data = __buff + 2;
                *size = in_command_data_buf_len - 4;
                return true;
             }
@@ -481,21 +471,21 @@ bool rpc_slave::__put_result(uint8_t *data, size_t size, unsigned long timeout)
 {
     const uint32_t header[1] = {size};
     uint8_t out_header[8];
-    if (_buff_len < (size + 4)) return false;
+    if (__buff_len < (size + 4)) return false;
+    _set_packet(__buff, _RESULT_DATA_PACKET_MAGIC, data, size);
     _put_short_timeout = _put_short_timeout_reset;
     _get_short_timeout = _get_short_timeout_reset;
-    _set_packet(out_header, _RESULT_HEADER_PACKET_MAGIC, (uint8_t *) header, 4);
-    _set_packet(_buff, _RESULT_DATA_PACKET_MAGIC, data, size);
     unsigned long start = millis();
 
     while ((millis() - start) < timeout) {
+        _set_packet(out_header, _RESULT_HEADER_PACKET_MAGIC, (uint8_t *) header, 4); // set repeatedly because SPI.transfer() clears.
         _zero(__in_response_header_buf, sizeof(__in_response_header_buf));
         _zero(__in_response_data_buf, sizeof(__in_response_data_buf));
         _flush();
         if (_get_packet(_RESULT_HEADER_PACKET_MAGIC, __in_response_header_buf, sizeof(__in_response_header_buf), _get_short_timeout)) {
             put_bytes(out_header, sizeof(out_header), _put_short_timeout);
             if (_get_packet(_RESULT_DATA_PACKET_MAGIC, __in_response_data_buf, sizeof(__in_response_data_buf), _get_short_timeout)) {
-                put_bytes(_buff, size + 4, _put_long_timeout);
+                put_bytes(__buff, size + 4, _put_long_timeout);
                 return true;
             }
         }
@@ -508,67 +498,176 @@ bool rpc_slave::__put_result(uint8_t *data, size_t size, unsigned long timeout)
     return false;
 }
 
-bool rpc_slave::register_callback(const char *name, rpc_callback_t callback)
+bool rpc_slave::__register_callback(uint32_t hash, rpc_callback_type_t type, void *value)
 {
-    uint32_t hash = _hash(name);
-
     for (size_t i = 0; i < __dict_alloced; i++) {
-        if (__dict[i].key == hash) {
-            __dict[i].value = callback;
+        if ((__dict[i].object == this) && (__dict[i].key == hash)) {
+            __dict[i].type = type;
+            __dict[i].value = value;
             return true;
         }
     }
 
     if (__dict_alloced < __dict_len) {
+        __dict[__dict_alloced].object = this;
         __dict[__dict_alloced].key = hash;
-        __dict[__dict_alloced++].value = callback;
+        __dict[__dict_alloced].type = type;
+        __dict[__dict_alloced].value = value;
+        __dict_alloced += 1;
         return true;
     }
 
     return false;
 }
 
-void rpc_slave::schedule_callback(rpc_plain_callback_t callback)
+bool rpc_slave::register_callback(const __FlashStringHelper *name, rpc_callback_t callback)
+{
+    return __register_callback(_hash(name), __CALLBACK, callback);
+}
+
+bool rpc_slave::register_callback(const String &name, rpc_callback_t callback)
+{
+    return __register_callback(_hash(name.c_str(), name.length()), __CALLBACK, callback);
+}
+
+bool rpc_slave::register_callback(const char *name, rpc_callback_t callback)
+{
+    return __register_callback(_hash(name), __CALLBACK, callback);
+}
+
+bool rpc_slave::register_callback(const __FlashStringHelper *name, rpc_callback_with_args_t callback)
+{
+    return __register_callback(_hash(name), __CALLBACK_WITH_ARGS, callback);
+}
+
+bool rpc_slave::register_callback(const String &name, rpc_callback_with_args_t callback)
+{
+    return __register_callback(_hash(name.c_str(), name.length()), __CALLBACK_WITH_ARGS, callback);
+}
+
+bool rpc_slave::register_callback(const char *name, rpc_callback_with_args_t callback)
+{
+    return __register_callback(_hash(name), __CALLBACK_WITH_ARGS, callback);
+}
+
+bool rpc_slave::register_callback(const __FlashStringHelper *name, rpc_callback_returns_result_t callback)
+{
+    return __register_callback(_hash(name), __CALLBACK_RETURNS_RESULT, callback);
+}
+
+bool rpc_slave::register_callback(const String &name, rpc_callback_returns_result_t callback)
+{
+    return __register_callback(_hash(name.c_str(), name.length()), __CALLBACK_RETURNS_RESULT, callback);
+}
+
+bool rpc_slave::register_callback(const char *name, rpc_callback_returns_result_t callback)
+{
+    return __register_callback(_hash(name), __CALLBACK_RETURNS_RESULT, callback);
+}
+
+bool rpc_slave::register_callback(const __FlashStringHelper *name, rpc_callback_returns_result_no_copy_t callback)
+{
+    return __register_callback(_hash(name), __CALLBACK_RETURNS_RESULT_NO_COPY, callback);
+}
+
+bool rpc_slave::register_callback(const String &name, rpc_callback_returns_result_no_copy_t callback)
+{
+    return __register_callback(_hash(name.c_str(), name.length()), __CALLBACK_RETURNS_RESULT_NO_COPY, callback);
+}
+
+bool rpc_slave::register_callback(const char *name, rpc_callback_returns_result_no_copy_t callback)
+{
+    return __register_callback(_hash(name), __CALLBACK_RETURNS_RESULT_NO_COPY, callback);
+}
+
+bool rpc_slave::register_callback(const __FlashStringHelper *name, rpc_callback_with_args_returns_result_t callback)
+{
+    return __register_callback(_hash(name), __CALLBACK_WITH_ARGS_RETURNS_RESULT, callback);
+}
+
+bool rpc_slave::register_callback(const String &name, rpc_callback_with_args_returns_result_t callback)
+{
+    return __register_callback(_hash(name.c_str(), name.length()), __CALLBACK_WITH_ARGS_RETURNS_RESULT, callback);
+}
+
+bool rpc_slave::register_callback(const char *name, rpc_callback_with_args_returns_result_t callback)
+{
+    return __register_callback(_hash(name), __CALLBACK_WITH_ARGS_RETURNS_RESULT, callback);
+}
+
+bool rpc_slave::register_callback(const __FlashStringHelper *name, rpc_callback_with_args_returns_result_no_copy_t callback)
+{
+    return __register_callback(_hash(name), __CALLBACK_WITH_ARGS_RETURNS_RESULT_NO_COPY, callback);
+}
+
+bool rpc_slave::register_callback(const String &name, rpc_callback_with_args_returns_result_no_copy_t callback)
+{
+    return __register_callback(_hash(name.c_str(), name.length()), __CALLBACK_WITH_ARGS_RETURNS_RESULT_NO_COPY, callback);
+}
+
+bool rpc_slave::register_callback(const char *name, rpc_callback_with_args_returns_result_no_copy_t callback)
+{
+    return __register_callback(_hash(name), __CALLBACK_WITH_ARGS_RETURNS_RESULT_NO_COPY, callback);
+}
+
+void rpc_slave::schedule_callback(rpc_callback_t callback)
 {
     __schedule_cb = callback;
 }
 
-void rpc_slave::setup_loop_callback(rpc_plain_callback_t callback)
-{
-    __loop_cb = callback;
-}
-
 void rpc_slave::loop(unsigned long send_timeout, unsigned long recv_timeout)
 {
-    for (;;) {
-        uint32_t command;
-        uint8_t *data;
-        size_t size;
+    uint32_t command;
+    uint8_t *data;
+    size_t size;
 
-        if (__get_command(&command, &data, &size, recv_timeout)) {
-            uint8_t *out_data = NULL;
-            size_t out_data_len = 0;
+    if (__get_command(&command, &data, &size, recv_timeout)) {
+        uint8_t *out_data = __buff + 2;
+        size_t out_data_len = 0;
 
-            for (size_t i = 0; i < __dict_alloced; i++) {
-                if ((__dict[i].key == command) && __dict[i].value) {
-                    __dict[i].value(data, size, &out_data, &out_data_len);
-                    break;
+        for (size_t i = 0; i < __dict_alloced; i++) {
+            if ((__dict[i].object == this) && (__dict[i].key == command) && __dict[i].value) {
+                switch (__dict[i].type) {
+                    case __CALLBACK: {
+                        (rpc_callback_t (__dict[i].value))();
+                        break;
+                    }
+                    case __CALLBACK_WITH_ARGS: {
+                        (rpc_callback_with_args_t (__dict[i].value))(data, size);
+                        break;
+                    }
+                    case __CALLBACK_RETURNS_RESULT: {
+                        (rpc_callback_returns_result_t (__dict[i].value))(&out_data, &out_data_len);
+                        break;
+                    }
+                    case __CALLBACK_RETURNS_RESULT_NO_COPY: {
+                        out_data_len = (rpc_callback_returns_result_no_copy_t (__dict[i].value))(__buff + 2);
+                        break;
+                    }
+                    case __CALLBACK_WITH_ARGS_RETURNS_RESULT: {
+                        (rpc_callback_with_args_returns_result_t (__dict[i].value))(data, size, &out_data, &out_data_len);
+                        break;
+                    }
+                    case __CALLBACK_WITH_ARGS_RETURNS_RESULT_NO_COPY: {
+                        out_data_len = (rpc_callback_with_args_returns_result_no_copy_t (__dict[i].value))(data, size, __buff + 2);
+                        break;
+                    }
                 }
-            }
 
-            if (__put_result(out_data, out_data_len, send_timeout) && __schedule_cb) __schedule_cb();
-            __schedule_cb = NULL;
+                break;
+            }
         }
 
-        if (__loop_cb) __loop_cb();
+        if (__put_result(out_data, out_data_len, send_timeout) && __schedule_cb) {
+            __schedule_cb();
+        }
+
+        __schedule_cb = NULL;
     }
 }
 
-rpc_can_master::rpc_can_master(uint8_t *buff, size_t buff_len, long message_id,
-                               long bit_rate)
-    : rpc_master(buff, buff_len) 
+rpc_can_master::rpc_can_master(int message_id, long bit_rate) : rpc_master(), __message_id(message_id) 
 {
-    __message_id = message_id;
     CAN.begin(bit_rate);
     CAN.filter(message_id);
 }
@@ -588,10 +687,10 @@ bool rpc_can_master::get_bytes(uint8_t *buff, size_t size, unsigned long timeout
     size_t i = 0;
     unsigned long start = millis();
 
-    while (((millis() - start) < timeout) && (i != size)) {
+    while (((millis() - start) < timeout) && (i < size)) {
         for (int j = 0, jj = CAN.parsePacket(); j < jj; j++) {
             buff[i++] = CAN.read();
-            if (i == size) break;
+            if (i >= size) break;
         }
     }
 
@@ -605,7 +704,7 @@ bool rpc_can_master::put_bytes(uint8_t *data, size_t size, unsigned long timeout
     size_t i = 0;
     unsigned long start = millis();
 
-    while (((millis() - start) < timeout) && (i != size)) {
+    while (((millis() - start) < timeout) && (i < size)) {
         if (CAN.beginPacket(__message_id)) {
             size_t sent = CAN.write(data + i, min(size - i, 8));
             if (CAN.endPacket()) i += sent;
@@ -615,12 +714,8 @@ bool rpc_can_master::put_bytes(uint8_t *data, size_t size, unsigned long timeout
     return i == size;
 }
 
-rpc_can_slave::rpc_can_slave(uint8_t *buff, size_t buff_len,
-                             rpc_callback_entry_t *callback_dict, size_t callback_dict_len,
-                             long message_id, long bit_rate)
-    : rpc_slave(buff, buff_len, callback_dict, callback_dict_len) 
+rpc_can_slave::rpc_can_slave(int message_id, long bit_rate) : rpc_slave(), __message_id(message_id)
 {
-    __message_id = message_id;
     CAN.begin(bit_rate);
     CAN.filter(message_id);
 }
@@ -640,10 +735,10 @@ bool rpc_can_slave::get_bytes(uint8_t *buff, size_t size, unsigned long timeout)
     size_t i = 0;
     unsigned long start = millis();
 
-    while (((millis() - start) < timeout) && (i != size)) {
+    while (((millis() - start) < timeout) && (i < size)) {
         for (int j = 0, jj = CAN.parsePacket(); j < jj; j++) {
             buff[i++] = CAN.read();
-            if (i == size) break;
+            if (i >= size) break;
         }
     }
 
@@ -655,7 +750,7 @@ bool rpc_can_slave::put_bytes(uint8_t *data, size_t size, unsigned long timeout)
     size_t i = 0;
     unsigned long start = millis();
 
-    while (((millis() - start) < timeout) && (i != size)) {
+    while (((millis() - start) < timeout) && (i < size)) {
         if (CAN.beginPacket(__message_id)) {
             size_t sent = CAN.write(data + i, min(size - i, 8));
             if (CAN.endPacket()) i += sent;
@@ -663,15 +758,6 @@ bool rpc_can_slave::put_bytes(uint8_t *data, size_t size, unsigned long timeout)
     }
 
     return i == size;
-}
-
-rpc_i2c_master::rpc_i2c_master(uint8_t *buff, size_t buff_len, int slave_addr,
-                               unsigned long rate)
-    : rpc_master(buff, buff_len) 
-{
-    __slave_addr = slave_addr;
-    __rate = rate;
-    _stream_writer_queue_depth_max = 1;
 }
 
 void rpc_i2c_master::_flush()
@@ -689,9 +775,9 @@ bool rpc_i2c_master::get_bytes(uint8_t *buff, size_t size, unsigned long timeout
 
     for (size_t i = 0; i < size; i += 32) {
         size_t size_remaining = size - i;
-        size_t request_size = min(size_remaining, 32);
-        bool request_stop = size_remaining <= 32;
-        delayMicroseconds(100); // Give slave time to get ready.
+        uint8_t request_size = min(size_remaining, 32);
+        uint8_t request_stop = size_remaining <= 32;
+        delayMicroseconds(100); // Give slave time to get ready
         if (Wire.requestFrom(__slave_addr, request_size, request_stop) != request_size) { ok = false; break; }
         for (size_t j = 0; j < request_size; j++) buff[i+j] = Wire.read();
     }
@@ -710,26 +796,17 @@ bool rpc_i2c_master::put_bytes(uint8_t *data, size_t size, unsigned long timeout
     Wire.begin();
     Wire.setClock(__rate);
 
-    for (size_t i = 0; (i < size) && ok; i += 32) {
+    for (size_t i = 0; i < size; i += 32) {
         size_t size_remaining = size - i;
-        size_t request_size = min(size_remaining, 32);
-        bool request_stop = size_remaining <= 32;
-        delayMicroseconds(100); // Give slave time to get ready.
+        uint8_t request_size = min(size_remaining, 32);
+        uint8_t request_stop = size_remaining <= 32;
+        delayMicroseconds(100); // Give slave time to get ready
         Wire.beginTransmission(__slave_addr);
-        ok = (Wire.write(data + i, request_size) == request_size) && (!Wire.endTransmission(request_stop));
+        if ((Wire.write(data + i, request_size) != request_size) || Wire.endTransmission(request_stop)) { ok = false; break; }
     }
 
     Wire.end();
     return ok;
-}
-
-rpc_i2c_slave::rpc_i2c_slave(uint8_t *buff, size_t buff_len,
-                             rpc_callback_entry_t *callback_dict, size_t callback_dict_len,
-                             int slave_addr)
-    : rpc_slave(buff, buff_len, callback_dict, callback_dict_len) 
-{
-    __slave_addr = slave_addr;
-    _stream_writer_queue_depth_max = 1;
 }
 
 void rpc_i2c_slave::_flush()
@@ -740,8 +817,8 @@ void rpc_i2c_slave::_flush()
 bool rpc_i2c_slave::get_bytes(uint8_t *buff, size_t size, unsigned long timeout)
 {
     // Turn the bus on and off so as to prevent lockups.
-    Wire.begin(__slave_addr);
     size_t i = 0;
+    Wire.begin(__slave_addr);
     unsigned long start = millis();
 
     while (((millis() - start) < timeout) && (i < size)) {
@@ -755,25 +832,23 @@ bool rpc_i2c_slave::get_bytes(uint8_t *buff, size_t size, unsigned long timeout)
 bool rpc_i2c_slave::put_bytes(uint8_t *data, size_t size, unsigned long timeout)
 {
     // Turn the bus on and off so as to prevent lockups.
-    Wire.begin(__slave_addr);
     size_t i = 0;
+    Wire.begin(__slave_addr);
     unsigned long start = millis();
 
-    while (((millis() - start) < timeout) && (i < size)) i += Wire.write(data + i, min(size - i, 32));
+    while (((millis() - start) < timeout) && (i < size)) {
+        i += Wire.write(data + i, min(size - i, 32));
+    }
 
     Wire.end();
     return i == size;
 }
 
-rpc_spi_master::rpc_spi_master(uint8_t *buff, size_t buff_len,
-                               unsigned long cs_pin, unsigned long freq, unsigned long spi_mode)
-    : rpc_master(buff, buff_len)
+rpc_spi_master::rpc_spi_master(uint8_t cs_pin, uint32_t freq, uint8_t spi_mode) : rpc_master(), __cs_pin(cs_pin), __settings(freq, MSBFIRST, spi_mode)
 {
+    digitalWrite(__cs_pin, HIGH);
     pinMode(__cs_pin, OUTPUT);
-    __cs_pin = cs_pin;
-    __settings = SPISettings(freq, MSBFIRST, spi_mode);
     SPI.begin();
-    _stream_writer_queue_depth_max = 1;
 }
 
 rpc_spi_master::~rpc_spi_master()
@@ -783,14 +858,7 @@ rpc_spi_master::~rpc_spi_master()
 
 bool rpc_spi_master::get_bytes(uint8_t *buff, size_t size, unsigned long timeout)
 {
-    (void) timeout;
-
-    digitalWrite(__cs_pin, LOW);
-    delayMicroseconds(100); // Give slave time to get ready.
-    SPI.beginTransaction(__settings);
-    SPI.transfer(buff, size);
-    SPI.endTransaction();
-    digitalWrite(__cs_pin, HIGH);
+    put_bytes(buff, size, timeout);
     bool ok = !_same(buff, size);
     if (!ok) delay(_get_short_timeout);
     return ok;
@@ -801,18 +869,16 @@ bool rpc_spi_master::put_bytes(uint8_t *data, size_t size, unsigned long timeout
     (void) timeout;
 
     digitalWrite(__cs_pin, LOW);
-    delayMicroseconds(100); // Give slave time to get ready.
+    delayMicroseconds(100); // Give slave time to get ready
     SPI.beginTransaction(__settings);
-    for (size_t i = 0; i < size; i++) SPI.transfer(data[i]); // Do not use SPI.transfer(buff, size) as it destroys the transmit message.
+    SPI.transfer(data, size);
     SPI.endTransaction();
     digitalWrite(__cs_pin, HIGH);
     return true;
 }
 
 #define RPC_HARDWARE_SERIAL_UART_MASTER_IMPLEMENTATION(name) \
-rpc_hardware_serial##name##_uart_master::rpc_hardware_serial##name##_uart_master(uint8_t *buff, size_t buff_len, \
-                                                                                 unsigned long baudrate) \
-    : rpc_master(buff, buff_len) \
+rpc_hardware_serial##name##_uart_master::rpc_hardware_serial##name##_uart_master(unsigned long baudrate) : rpc_master() \
 { \
     Serial##name.begin(baudrate); \
 } \
@@ -862,10 +928,7 @@ RPC_HARDWARE_SERIAL_UART_MASTER_IMPLEMENTATION()
 #endif
 
 #define RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION(name) \
-rpc_hardware_serial##name##_uart_slave::rpc_hardware_serial##name##_uart_slave(uint8_t *buff, size_t buff_len, \
-                                                                               rpc_callback_entry_t *callback_dict, size_t callback_dict_len, \
-                                                                               unsigned long baudrate) \
-    : rpc_slave(buff, buff_len, callback_dict, callback_dict_len) \
+rpc_hardware_serial##name##_uart_slave::rpc_hardware_serial##name##_uart_slave(unsigned long baudrate) : rpc_slave() \
 { \
     Serial##name.begin(baudrate); \
 } \
@@ -912,9 +975,7 @@ RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION(3)
 RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION()
 #endif
 
-rpc_software_serial_uart_master::rpc_software_serial_uart_master(uint8_t *buff, size_t buff_len,
-                                                                 unsigned long rx_pin, unsigned long tx_pin, unsigned long baudrate)
-    : rpc_master(buff, buff_len), __serial(rx_pin, tx_pin)
+rpc_software_serial_uart_master::rpc_software_serial_uart_master(uint8_t rx_pin, uint8_t tx_pin, long baudrate) : rpc_master(), __serial(rx_pin, tx_pin)
 {
     __serial.begin(baudrate);
 }
@@ -951,10 +1012,7 @@ bool rpc_software_serial_uart_master::put_bytes(uint8_t *buff, size_t size, unsi
     return __serial.write(buff, size) == size;
 }
 
-rpc_software_serial_uart_slave::rpc_software_serial_uart_slave(uint8_t *buff, size_t buff_len,
-                                                               rpc_callback_entry_t *callback_dict, size_t callback_dict_len,
-                                                               unsigned long rx_pin, unsigned long tx_pin, unsigned long baudrate)
-    : rpc_slave(buff, buff_len, callback_dict, callback_dict_len), __serial(rx_pin, tx_pin)
+rpc_software_serial_uart_slave::rpc_software_serial_uart_slave(uint8_t rx_pin, uint8_t tx_pin, long baudrate) : rpc_slave(), __serial(rx_pin, tx_pin)
 {
     __serial.begin(baudrate);
 }

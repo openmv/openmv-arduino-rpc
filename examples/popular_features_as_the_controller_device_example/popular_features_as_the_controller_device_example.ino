@@ -5,7 +5,7 @@
 // library.
 //
 // This script is designed to pair with "popular_features_as_the_remote_device.py" running
-// on the OpenMV Cam.
+// on the OpenMV Cam. The script is in OpenMV IDE under Files -> Examples -> Remote Control. 
 
 #include <openmvrpc.h>
 
@@ -13,9 +13,9 @@
 // CAN, I2C, SPI, or Serial (UART).
 
 // We need to define a scratch buffer for holding messages. The maximum amount of data
-// you may pass in any on direction is limited to the size of this buffer minus 4.
+// you may pass in any on direction is limited to the size of this buffer.
 
-uint8_t scratch_buffer[256 + 4];
+openmv::rpc_scratch_buffer<256>; // All RPC objects share this buffer.
 
 ///////////////////////////////////////////////////////////////
 // Choose the interface you wish to control an OpenMV Cam over.
@@ -26,10 +26,12 @@ uint8_t scratch_buffer[256 + 4];
 // * message_id - CAN message to use for data transport on the can bus (11-bit).
 // * bit_rate - CAN bit rate.
 //
+// If you need to change the can pin/clock settings do that before creating the object below.
+//
 // NOTE: Master and slave message ids and can bit rates must match. Connect master can high to slave
 //       can high and master can low to slave can lo. The can bus must be terminated with 120 ohms.
 //
-// openmv::rpc_can_master interface(message_id=0x7FF, bit_rate=250000, sampling_point=75);
+// openmv::rpc_can_master interface(0x7FF, 250E3);
 
 // Uncomment the below line to setup your Arduino for controlling over I2C.
 //
@@ -39,7 +41,7 @@ uint8_t scratch_buffer[256 + 4];
 // NOTE: Master and slave addresses must match. Connect master scl to slave scl and master sda
 //       to slave sda. You must use external pull ups. Finally, both devices must share a ground.
 //
-openmv::rpc_i2c_master interface(scratch_buffer, sizeof(scratch_buffer), 0x12, 100000);
+// openmv::rpc_i2c_master interface(0x12, 100000);
 
 // Uncomment the below line to setup your Arduino for controlling over SPI.
 //
@@ -50,7 +52,7 @@ openmv::rpc_i2c_master interface(scratch_buffer, sizeof(scratch_buffer), 0x12, 1
 // NOTE: Master and slave settings much match. Connect CS, SCLK, MOSI, MISO to CS, SCLK, MOSI, MISO.
 //       Finally, both devices must share a common ground.
 //
-// openmv::rpc_spi_master interface(scratch_buffer, sizeof(scratch_buffer), 10, 1000000, SPI_MODE2);
+// openmv::rpc_spi_master interface(10, 1000000, SPI_MODE2);
 
 // Uncomment the below line to setup your Arduino for controlling over a hardware UART.
 //
@@ -68,7 +70,7 @@ openmv::rpc_i2c_master interface(scratch_buffer, sizeof(scratch_buffer), 0x12, 1
 // openmv::rpc_hardware_serial2_uart_master -> Serial2
 // openmv::rpc_hardware_serial3_uart_master -> Serial3
 //
-// openmv::rpc_hardware_serial1_uart_master interface(scratch_buffer, sizeof(scratch_buffer), 115200);
+// openmv::rpc_hardware_serial1_uart_master interface(115200);
 
 // Uncomment the below line to setup your Arduino for controlling over a software UART.
 //
@@ -79,7 +81,7 @@ openmv::rpc_i2c_master interface(scratch_buffer, sizeof(scratch_buffer), 0x12, 1
 // NOTE: Master and slave baud rates must match. Connect master tx to slave rx and master rx to
 //       slave tx. Finally, both devices must share a common ground.
 //
-// openmv::rpc_software_serial_uart_master interface(scratch_buffer, sizeof(scratch_buffer), 2, 3, 19200);
+openmv::rpc_software_serial_uart_master interface(2, 3, 19200);
 
 void setup() {
     Serial.begin(115200);
