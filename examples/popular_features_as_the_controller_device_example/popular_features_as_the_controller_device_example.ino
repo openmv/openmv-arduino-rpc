@@ -1,4 +1,3 @@
-
 // Remote Control - As The Controller Device
 //
 // This script configures your Arduino to remotely control an OpenMV Cam using the RPC
@@ -7,6 +6,10 @@
 // This script is designed to pair with "popular_features_as_the_remote_device.py" running
 // on the OpenMV Cam. The script is in OpenMV IDE under Files -> Examples -> Remote Control. 
 
+#include <CAN.h>
+#include <SoftwareSerial.h>
+#include <SPI.h>
+#include <Wire.h>
 #include <openmvrpc.h>
 
 // The RPC library above provides mutliple classes for controlling an OpenMV Cam over
@@ -15,7 +18,7 @@
 // We need to define a scratch buffer for holding messages. The maximum amount of data
 // you may pass in any on direction is limited to the size of this buffer.
 
-openmv::rpc_scratch_buffer<256>; // All RPC objects share this buffer.
+openmv::rpc_scratch_buffer<256> scratch_buffer; // All RPC objects share this buffer.
 
 ///////////////////////////////////////////////////////////////
 // Choose the interface you wish to control an OpenMV Cam over.
@@ -26,12 +29,14 @@ openmv::rpc_scratch_buffer<256>; // All RPC objects share this buffer.
 // * message_id - CAN message to use for data transport on the can bus (11-bit).
 // * bit_rate - CAN bit rate.
 //
-// If you need to change the can pin/clock settings do that before creating the object below.
+// If you need to change the can pin/clock settings do that before creating the object below. E.g.
+//
+// CAN.setPins(9, 2); // CS & INT
 //
 // NOTE: Master and slave message ids and can bit rates must match. Connect master can high to slave
 //       can high and master can low to slave can lo. The can bus must be terminated with 120 ohms.
 //
-// openmv::rpc_can_master interface(0x7FF, 250E3);
+openmv::rpc_can_master interface(0x7FF, 250E3);
 
 // Uncomment the below line to setup your Arduino for controlling over I2C.
 //
@@ -81,7 +86,7 @@ openmv::rpc_scratch_buffer<256>; // All RPC objects share this buffer.
 // NOTE: Master and slave baud rates must match. Connect master tx to slave rx and master rx to
 //       slave tx. Finally, both devices must share a common ground.
 //
-openmv::rpc_software_serial_uart_master interface(2, 3, 19200);
+// openmv::rpc_software_serial_uart_master interface(2, 3, 19200);
 
 void setup() {
     Serial.begin(115200);

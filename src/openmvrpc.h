@@ -4,14 +4,14 @@
 // Written by Larry Bank & Kwabena W. Agyeman
 //
 
-#ifndef __OPENMVRPC__
-#define __OPENMVRPC__
-
 #include <Arduino.h>
 #include <CAN.h>
 #include <SoftwareSerial.h>
 #include <SPI.h>
 #include <Wire.h>
+
+#ifndef __OPENMVRPC__
+#define __OPENMVRPC__
 
 namespace openmv {
 

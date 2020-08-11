@@ -522,92 +522,92 @@ bool rpc_slave::__register_callback(uint32_t hash, rpc_callback_type_t type, voi
 
 bool rpc_slave::register_callback(const __FlashStringHelper *name, rpc_callback_t callback)
 {
-    return __register_callback(_hash(name), __CALLBACK, callback);
+    return __register_callback(_hash(name), __CALLBACK, (void *) callback);
 }
 
 bool rpc_slave::register_callback(const String &name, rpc_callback_t callback)
 {
-    return __register_callback(_hash(name.c_str(), name.length()), __CALLBACK, callback);
+    return __register_callback(_hash(name.c_str(), name.length()), __CALLBACK, (void *) callback);
 }
 
 bool rpc_slave::register_callback(const char *name, rpc_callback_t callback)
 {
-    return __register_callback(_hash(name), __CALLBACK, callback);
+    return __register_callback(_hash(name), __CALLBACK, (void *) callback);
 }
 
 bool rpc_slave::register_callback(const __FlashStringHelper *name, rpc_callback_with_args_t callback)
 {
-    return __register_callback(_hash(name), __CALLBACK_WITH_ARGS, callback);
+    return __register_callback(_hash(name), __CALLBACK_WITH_ARGS, (void *) callback);
 }
 
 bool rpc_slave::register_callback(const String &name, rpc_callback_with_args_t callback)
 {
-    return __register_callback(_hash(name.c_str(), name.length()), __CALLBACK_WITH_ARGS, callback);
+    return __register_callback(_hash(name.c_str(), name.length()), __CALLBACK_WITH_ARGS, (void *) callback);
 }
 
 bool rpc_slave::register_callback(const char *name, rpc_callback_with_args_t callback)
 {
-    return __register_callback(_hash(name), __CALLBACK_WITH_ARGS, callback);
+    return __register_callback(_hash(name), __CALLBACK_WITH_ARGS, (void *) callback);
 }
 
 bool rpc_slave::register_callback(const __FlashStringHelper *name, rpc_callback_returns_result_t callback)
 {
-    return __register_callback(_hash(name), __CALLBACK_RETURNS_RESULT, callback);
+    return __register_callback(_hash(name), __CALLBACK_RETURNS_RESULT, (void *) callback);
 }
 
 bool rpc_slave::register_callback(const String &name, rpc_callback_returns_result_t callback)
 {
-    return __register_callback(_hash(name.c_str(), name.length()), __CALLBACK_RETURNS_RESULT, callback);
+    return __register_callback(_hash(name.c_str(), name.length()), __CALLBACK_RETURNS_RESULT, (void *) callback);
 }
 
 bool rpc_slave::register_callback(const char *name, rpc_callback_returns_result_t callback)
 {
-    return __register_callback(_hash(name), __CALLBACK_RETURNS_RESULT, callback);
+    return __register_callback(_hash(name), __CALLBACK_RETURNS_RESULT, (void *) callback);
 }
 
 bool rpc_slave::register_callback(const __FlashStringHelper *name, rpc_callback_returns_result_no_copy_t callback)
 {
-    return __register_callback(_hash(name), __CALLBACK_RETURNS_RESULT_NO_COPY, callback);
+    return __register_callback(_hash(name), __CALLBACK_RETURNS_RESULT_NO_COPY, (void *) callback);
 }
 
 bool rpc_slave::register_callback(const String &name, rpc_callback_returns_result_no_copy_t callback)
 {
-    return __register_callback(_hash(name.c_str(), name.length()), __CALLBACK_RETURNS_RESULT_NO_COPY, callback);
+    return __register_callback(_hash(name.c_str(), name.length()), __CALLBACK_RETURNS_RESULT_NO_COPY, (void *) callback);
 }
 
 bool rpc_slave::register_callback(const char *name, rpc_callback_returns_result_no_copy_t callback)
 {
-    return __register_callback(_hash(name), __CALLBACK_RETURNS_RESULT_NO_COPY, callback);
+    return __register_callback(_hash(name), __CALLBACK_RETURNS_RESULT_NO_COPY, (void *) callback);
 }
 
 bool rpc_slave::register_callback(const __FlashStringHelper *name, rpc_callback_with_args_returns_result_t callback)
 {
-    return __register_callback(_hash(name), __CALLBACK_WITH_ARGS_RETURNS_RESULT, callback);
+    return __register_callback(_hash(name), __CALLBACK_WITH_ARGS_RETURNS_RESULT, (void *) callback);
 }
 
 bool rpc_slave::register_callback(const String &name, rpc_callback_with_args_returns_result_t callback)
 {
-    return __register_callback(_hash(name.c_str(), name.length()), __CALLBACK_WITH_ARGS_RETURNS_RESULT, callback);
+    return __register_callback(_hash(name.c_str(), name.length()), __CALLBACK_WITH_ARGS_RETURNS_RESULT, (void *) callback);
 }
 
 bool rpc_slave::register_callback(const char *name, rpc_callback_with_args_returns_result_t callback)
 {
-    return __register_callback(_hash(name), __CALLBACK_WITH_ARGS_RETURNS_RESULT, callback);
+    return __register_callback(_hash(name), __CALLBACK_WITH_ARGS_RETURNS_RESULT, (void *) callback);
 }
 
 bool rpc_slave::register_callback(const __FlashStringHelper *name, rpc_callback_with_args_returns_result_no_copy_t callback)
 {
-    return __register_callback(_hash(name), __CALLBACK_WITH_ARGS_RETURNS_RESULT_NO_COPY, callback);
+    return __register_callback(_hash(name), __CALLBACK_WITH_ARGS_RETURNS_RESULT_NO_COPY, (void *) callback);
 }
 
 bool rpc_slave::register_callback(const String &name, rpc_callback_with_args_returns_result_no_copy_t callback)
 {
-    return __register_callback(_hash(name.c_str(), name.length()), __CALLBACK_WITH_ARGS_RETURNS_RESULT_NO_COPY, callback);
+    return __register_callback(_hash(name.c_str(), name.length()), __CALLBACK_WITH_ARGS_RETURNS_RESULT_NO_COPY, (void *) callback);
 }
 
 bool rpc_slave::register_callback(const char *name, rpc_callback_with_args_returns_result_no_copy_t callback)
 {
-    return __register_callback(_hash(name), __CALLBACK_WITH_ARGS_RETURNS_RESULT_NO_COPY, callback);
+    return __register_callback(_hash(name), __CALLBACK_WITH_ARGS_RETURNS_RESULT_NO_COPY, (void *) callback);
 }
 
 void rpc_slave::schedule_callback(rpc_callback_t callback)
@@ -637,7 +637,7 @@ void rpc_slave::loop(unsigned long send_timeout, unsigned long recv_timeout)
                         break;
                     }
                     case __CALLBACK_RETURNS_RESULT: {
-                        (rpc_callback_returns_result_t (__dict[i].value))(&out_data, &out_data_len);
+                        (rpc_callback_returns_result_t (__dict[i].value))((void **) &out_data, &out_data_len);
                         break;
                     }
                     case __CALLBACK_RETURNS_RESULT_NO_COPY: {
@@ -645,7 +645,7 @@ void rpc_slave::loop(unsigned long send_timeout, unsigned long recv_timeout)
                         break;
                     }
                     case __CALLBACK_WITH_ARGS_RETURNS_RESULT: {
-                        (rpc_callback_with_args_returns_result_t (__dict[i].value))(data, size, &out_data, &out_data_len);
+                        (rpc_callback_with_args_returns_result_t (__dict[i].value))(data, size, (void **) &out_data, &out_data_len);
                         break;
                     }
                     case __CALLBACK_WITH_ARGS_RETURNS_RESULT_NO_COPY: {
