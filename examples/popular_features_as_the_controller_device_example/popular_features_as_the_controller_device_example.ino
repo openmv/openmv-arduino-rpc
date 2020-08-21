@@ -6,10 +6,6 @@
 // This script is designed to pair with "popular_features_as_the_remote_device.py" running
 // on the OpenMV Cam. The script is in OpenMV IDE under Files -> Examples -> Remote Control. 
 
-#include <CAN.h>
-#include <SoftwareSerial.h>
-#include <SPI.h>
-#include <Wire.h>
 #include <openmvrpc.h>
 
 // The RPC library above provides mutliple classes for controlling an OpenMV Cam over
@@ -28,10 +24,6 @@ openmv::rpc_scratch_buffer<256> scratch_buffer; // All RPC objects share this bu
 //
 // * message_id - CAN message to use for data transport on the can bus (11-bit).
 // * bit_rate - CAN bit rate.
-//
-// If you need to change the can pin/clock settings do that before creating the object below. E.g.
-//
-// CAN.setPins(9, 2); // CS & INT
 //
 // NOTE: Master and slave message ids and can bit rates must match. Connect master can high to slave
 //       can high and master can low to slave can lo. The can bus must be terminated with 120 ohms.
@@ -89,6 +81,14 @@ openmv::rpc_can_master interface(0x7FF, 250E3);
 // openmv::rpc_software_serial_uart_master interface(2, 3, 19200);
 
 void setup() {
+
+    // For MCP2515 CAN we might need to change the default CAN settings for the Arduino Uno.
+    //
+    // CAN.setPins(9, 2); // CS & INT
+    // CAN.setClockFrequency(16E6); // 16 MHz
+
+    // Startup the RPC interface and a debug channel.
+    interface.begin();
     Serial.begin(115200);
 }
 

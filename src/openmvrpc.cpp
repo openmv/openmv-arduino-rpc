@@ -43,7 +43,7 @@ static unsigned long unpack_unsigned_long(uint8_t *data)
     return ret;
 }
 
-static const uint16_t __crc_16_table[256] =
+static const uint16_t __crc_16_table[256] PROGMEM =
 {
     0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50A5, 0x60C6, 0x70E7,
     0x8108, 0x9129, 0xA14A, 0xB16B, 0xC18C, 0xD1AD, 0xE1CE, 0xF1EF,
@@ -88,7 +88,7 @@ uint16_t rpc::__crc_16(uint8_t *data, size_t size)
     //    for (size_t j = 0; j < 8; j++) crc = (crc << 1) ^ ((crc & 0x8000) ? 0x1021 : 0x0000);
     // }
 
-    for (size_t i = 0; i < size; i++) crc = __crc_16_table[((crc >> 8) ^ data[i]) & 0xff] ^ (crc << 8);
+    for (size_t i = 0; i < size; i++) crc = pgm_read_word_near(__crc_16_table + (((crc >> 8) ^ data[i]) & 0xff)) ^ (crc << 8);
 
     return crc;
 }
@@ -666,17 +666,6 @@ void rpc_slave::loop(unsigned long send_timeout, unsigned long recv_timeout)
     }
 }
 
-rpc_can_master::rpc_can_master(int message_id, long bit_rate) : rpc_master(), __message_id(message_id) 
-{
-    CAN.begin(bit_rate);
-    CAN.filter(message_id);
-}
-
-rpc_can_master::~rpc_can_master()
-{
-    CAN.end();
-}
-
 void rpc_can_master::_flush()
 {
     for (int i = 0, ii = CAN.parsePacket(); i < ii; i++) CAN.read();
@@ -687,7 +676,7 @@ bool rpc_can_master::get_bytes(uint8_t *buff, size_t size, unsigned long timeout
     size_t i = 0;
     unsigned long start = millis();
 
-    while (((millis() - start) < timeout) && (i < size)) {
+    while (((millis() - start) <= timeout) && (i < size)) {
         for (int j = 0, jj = CAN.parsePacket(); j < jj; j++) {
             buff[i++] = CAN.read();
             if (i >= size) break;
@@ -704,7 +693,7 @@ bool rpc_can_master::put_bytes(uint8_t *data, size_t size, unsigned long timeout
     size_t i = 0;
     unsigned long start = millis();
 
-    while (((millis() - start) < timeout) && (i < size)) {
+    while (((millis() - start) <= timeout) && (i < size)) {
         if (CAN.beginPacket(__message_id)) {
             size_t sent = CAN.write(data + i, min(size - i, 8));
             if (CAN.endPacket()) i += sent;
@@ -712,17 +701,6 @@ bool rpc_can_master::put_bytes(uint8_t *data, size_t size, unsigned long timeout
     }
 
     return i == size;
-}
-
-rpc_can_slave::rpc_can_slave(int message_id, long bit_rate) : rpc_slave(), __message_id(message_id)
-{
-    CAN.begin(bit_rate);
-    CAN.filter(message_id);
-}
-
-rpc_can_slave::~rpc_can_slave()
-{
-    CAN.end();
 }
 
 void rpc_can_slave::_flush()
@@ -735,7 +713,7 @@ bool rpc_can_slave::get_bytes(uint8_t *buff, size_t size, unsigned long timeout)
     size_t i = 0;
     unsigned long start = millis();
 
-    while (((millis() - start) < timeout) && (i < size)) {
+    while (((millis() - start) <= timeout) && (i < size)) {
         for (int j = 0, jj = CAN.parsePacket(); j < jj; j++) {
             buff[i++] = CAN.read();
             if (i >= size) break;
@@ -750,7 +728,7 @@ bool rpc_can_slave::put_bytes(uint8_t *data, size_t size, unsigned long timeout)
     size_t i = 0;
     unsigned long start = millis();
 
-    while (((millis() - start) < timeout) && (i < size)) {
+    while (((millis() - start) <= timeout) && (i < size)) {
         if (CAN.beginPacket(__message_id)) {
             size_t sent = CAN.write(data + i, min(size - i, 8));
             if (CAN.endPacket()) i += sent;
@@ -809,6 +787,25 @@ bool rpc_i2c_master::put_bytes(uint8_t *data, size_t size, unsigned long timeout
     return ok;
 }
 
+volatile uint8_t *rpc_i2c_slave::__bytes_buff = NULL;
+volatile size_t rpc_i2c_slave::__bytes_size = 0;
+
+void rpc_i2c_slave::onReceiveHandler(int numBytes)
+{
+    if (!__bytes_size) return;
+    for (int i = 0, j = min(__bytes_size, numBytes); i < j; i++) __bytes_buff[i] = Wire.read();
+    __bytes_buff += numBytes;
+    __bytes_size -= numBytes;
+}
+
+void rpc_i2c_slave::onRequestHandler()
+{
+    if (!__bytes_size) return;
+    size_t written = Wire.write((const uint8_t *) __bytes_buff, min(__bytes_size, 32));
+    __bytes_buff += written;
+    __bytes_size -= written;
+}
+
 void rpc_i2c_slave::_flush()
 {
     for (int i = Wire.available(); i > 0; i--) Wire.read();
@@ -816,44 +813,24 @@ void rpc_i2c_slave::_flush()
 
 bool rpc_i2c_slave::get_bytes(uint8_t *buff, size_t size, unsigned long timeout)
 {
-    // Turn the bus on and off so as to prevent lockups.
-    size_t i = 0;
-    Wire.begin(__slave_addr);
+    __bytes_buff = buff;
+    __bytes_size = size;
     unsigned long start = millis();
-
-    while (((millis() - start) < timeout) && (i < size)) {
-        if (Wire.available()) buff[i++] = Wire.read();
-    }
-
-    Wire.end();
-    return i == size;
+    while (((millis() - start) <= timeout) && __bytes_size);
+    bool ok = !__bytes_size;
+    __bytes_size = 0;
+    return ok;
 }
 
 bool rpc_i2c_slave::put_bytes(uint8_t *data, size_t size, unsigned long timeout)
 {
-    // Turn the bus on and off so as to prevent lockups.
-    size_t i = 0;
-    Wire.begin(__slave_addr);
+    __bytes_buff = data;
+    __bytes_size = size;
     unsigned long start = millis();
-
-    while (((millis() - start) < timeout) && (i < size)) {
-        i += Wire.write(data + i, min(size - i, 32));
-    }
-
-    Wire.end();
-    return i == size;
-}
-
-rpc_spi_master::rpc_spi_master(uint8_t cs_pin, uint32_t freq, uint8_t spi_mode) : rpc_master(), __cs_pin(cs_pin), __settings(freq, MSBFIRST, spi_mode)
-{
-    digitalWrite(__cs_pin, HIGH);
-    pinMode(__cs_pin, OUTPUT);
-    SPI.begin();
-}
-
-rpc_spi_master::~rpc_spi_master()
-{
-    SPI.end();
+    while (((millis() - start) <= timeout) && __bytes_size);
+    bool ok = !__bytes_size;
+    __bytes_size = 0;
+    return ok;
 }
 
 bool rpc_spi_master::get_bytes(uint8_t *buff, size_t size, unsigned long timeout)
@@ -878,16 +855,6 @@ bool rpc_spi_master::put_bytes(uint8_t *data, size_t size, unsigned long timeout
 }
 
 #define RPC_HARDWARE_SERIAL_UART_MASTER_IMPLEMENTATION(name) \
-rpc_hardware_serial##name##_uart_master::rpc_hardware_serial##name##_uart_master(unsigned long baudrate) : rpc_master() \
-{ \
-    Serial##name.begin(baudrate); \
-} \
-\
-rpc_hardware_serial##name##_uart_master::~rpc_hardware_serial##name##_uart_master() \
-{ \
-    Serial##name.end(); \
-} \
-\
 void rpc_hardware_serial##name##_uart_master::_flush() \
 { \
     for (int i = Serial##name.available(); i > 0; i--) Serial##name.read(); \
@@ -895,8 +862,8 @@ void rpc_hardware_serial##name##_uart_master::_flush() \
 \
 bool rpc_hardware_serial##name##_uart_master::get_bytes(uint8_t *buff, size_t size, unsigned long timeout) \
 { \
-    Serial##name.setTimeout(timeout); \
-    bool ok = Serial##name.readBytes(buff, size) == size; \
+    Serial##name.setTimeout(timeout + 1); \
+    bool ok = (Serial##name.readBytes(buff, size) == size) && (!_same(buff, size)); \
     if (!ok) delay(_get_short_timeout); \
     return ok; \
 } \
@@ -928,16 +895,6 @@ RPC_HARDWARE_SERIAL_UART_MASTER_IMPLEMENTATION()
 #endif
 
 #define RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION(name) \
-rpc_hardware_serial##name##_uart_slave::rpc_hardware_serial##name##_uart_slave(unsigned long baudrate) : rpc_slave() \
-{ \
-    Serial##name.begin(baudrate); \
-} \
-\
-rpc_hardware_serial##name##_uart_slave::~rpc_hardware_serial##name##_uart_slave() \
-{ \
-    Serial##name.end(); \
-} \
-\
 void rpc_hardware_serial##name##_uart_slave::_flush() \
 { \
     for (int i = Serial##name.available(); i > 0; i--) Serial##name.read(); \
@@ -945,7 +902,7 @@ void rpc_hardware_serial##name##_uart_slave::_flush() \
 \
 bool rpc_hardware_serial##name##_uart_slave::get_bytes(uint8_t *buff, size_t size, unsigned long timeout) \
 { \
-    Serial##name.setTimeout(timeout); \
+    Serial##name.setTimeout(timeout + 1); \
     return Serial##name.readBytes(buff, size) == size; \
 } \
 \
@@ -975,11 +932,7 @@ RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION(3)
 RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION()
 #endif
 
-rpc_software_serial_uart_master::rpc_software_serial_uart_master(uint8_t rx_pin, uint8_t tx_pin, long baudrate) : rpc_master(), __serial(rx_pin, tx_pin)
-{
-    __serial.begin(baudrate);
-}
-
+#ifndef ARDUINO_ARCH_SAM
 void rpc_software_serial_uart_master::_flush()
 {
     __serial.listen();
@@ -1012,11 +965,6 @@ bool rpc_software_serial_uart_master::put_bytes(uint8_t *buff, size_t size, unsi
     return __serial.write(buff, size) == size;
 }
 
-rpc_software_serial_uart_slave::rpc_software_serial_uart_slave(uint8_t rx_pin, uint8_t tx_pin, long baudrate) : rpc_slave(), __serial(rx_pin, tx_pin)
-{
-    __serial.begin(baudrate);
-}
-
 void rpc_software_serial_uart_slave::_flush()
 {
     __serial.listen();
@@ -1046,3 +994,4 @@ bool rpc_software_serial_uart_slave::put_bytes(uint8_t *buff, size_t size, unsig
     (void) timeout;
     return __serial.write(buff, size) == size;
 }
+#endif // ARDUINO_ARCH_SAM
