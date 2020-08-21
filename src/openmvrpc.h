@@ -49,8 +49,10 @@ public:
     virtual bool put_bytes(uint8_t *data, size_t size, unsigned long timeout) = 0;
     virtual void begin() {}
     virtual void end() {}
-    void stream_reader(rpc_stream_reader_callback_t callback, uint32_t queue_depth = 1, unsigned long read_timeout = 5000);
-    void stream_writer(rpc_stream_writer_callback_t callback, unsigned long write_timeout = 5000);
+    bool stream_reader_setup(uint32_t queue_depth = 1);
+    bool stream_reader_loop(rpc_stream_reader_callback_t callback, unsigned long read_timeout = 5000);
+    bool stream_writer_setup();
+    bool stream_writer_loop(rpc_stream_writer_callback_t callback, unsigned long write_timeout = 5000);
 protected:
     const uint16_t _COMMAND_HEADER_PACKET_MAGIC = 0x1209;
     const uint16_t _COMMAND_DATA_PACKET_MAGIC = 0xABD1;
@@ -72,6 +74,10 @@ protected:
     virtual bool _stream_put_bytes(uint8_t *data, size_t size, unsigned long timeout);
     virtual uint32_t _stream_writer_queue_depth_max() { return 255; }
 private:
+    uint8_t __tx_lfsr;
+    uint8_t __rx_lfsr;
+    uint32_t __queue_depth;
+    uint32_t __credits;
     rpc(const rpc &);
     uint16_t __crc_16(uint8_t *data, size_t size);
 };

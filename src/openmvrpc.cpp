@@ -173,55 +173,65 @@ void rpc::_set_packet(uint8_t *buff, uint16_t magic_value, uint8_t *data, size_t
     buff[size + 3] = crc >> 8;
 }
 
-void rpc::stream_reader(rpc_stream_reader_callback_t callback, uint32_t queue_depth, unsigned long read_timeout)
+bool rpc::stream_reader_setup(uint32_t queue_depth = 1)
 {
     uint8_t packet[8];
     _set_packet(packet, 0xEDF6, (uint8_t *) &queue_depth, sizeof(queue_depth));
-    if (!_stream_put_bytes(packet, sizeof(packet), 1000)) return;
-    uint8_t tx_lfsr = 255;
-
-    for (;;) {
-        if (!_stream_get_bytes(packet, sizeof(packet), 1000)) return;
-        uint16_t magic = packet[0] | (packet[1] << 8);
-        uint16_t crc = packet[6] | (packet[7] << 8);
-        if ((magic != 0x542E) && (crc != __crc_16(packet, sizeof(packet) - 2))) return;
-        uint32_t size = unpack_unsigned_long(packet + 2);
-        if (__buff_len < size) return;
-        if (!_stream_get_bytes(__buff, size, read_timeout)) return;
-        if (!callback(__buff, size)) return;
-        if (!_stream_put_bytes(&tx_lfsr, sizeof(tx_lfsr), 1000)) return;
-        tx_lfsr = (tx_lfsr >> 1) ^ ((tx_lfsr & 1) ? 0xB8 : 0x00);
-    }
+    if (!_stream_put_bytes(packet, sizeof(packet), 1000)) return false;
+    __tx_lfsr = 255;
+    return true;
 }
 
-void rpc::stream_writer(rpc_stream_writer_callback_t callback, unsigned long write_timeout)
+bool rpc::stream_reader_loop(rpc_stream_reader_callback_t callback, unsigned long read_timeout)
 {
     uint8_t packet[8];
-    if (!_stream_get_bytes(packet, sizeof(packet), 1000)) return;
+    if (!_stream_get_bytes(packet, sizeof(packet), 1000)) return false;
     uint16_t magic = packet[0] | (packet[1] << 8);
     uint16_t crc = packet[6] | (packet[7] << 8);
-    if ((magic != 0xEDF6) && (crc != __crc_16(packet, sizeof(packet) - 2))) return;
-    uint32_t queue_depth = max(min(unpack_unsigned_long(packet + 2), _stream_writer_queue_depth_max()), 1);
-    uint8_t rx_lfsr = 255;
-    uint32_t credits = queue_depth;
+    if ((magic != 0x542E) && (crc != __crc_16(packet, sizeof(packet) - 2))) return false;
+    uint32_t size = unpack_unsigned_long(packet + 2);
+    if (__buff_len < size) return false;
+    if (!_stream_get_bytes(__buff, size, read_timeout)) return false;
+    if (!callback(__buff, size)) return false;
+    if (!_stream_put_bytes(&__tx_lfsr, sizeof(__tx_lfsr), 1000)) return false;
+    __tx_lfsr = (__tx_lfsr >> 1) ^ ((__tx_lfsr & 1) ? 0xB8 : 0x00);
+    return true;
+}
 
-    for (;;) {
-        if (credits <= (queue_depth / 2)) {
-            if ((!_stream_get_bytes(packet, 1, 1000)) || (packet[0] != rx_lfsr)) return;
-            rx_lfsr = (rx_lfsr >> 1) ^ ((rx_lfsr & 1) ? 0xB8 : 0x00);
-            credits += 1;
-        }
+bool rpc::stream_writer_setup()
+{
+    uint8_t packet[8];
+    if (!_stream_get_bytes(packet, sizeof(packet), 1000)) return false;
+    uint16_t magic = packet[0] | (packet[1] << 8);
+    uint16_t crc = packet[6] | (packet[7] << 8);
+    if ((magic != 0xEDF6) && (crc != __crc_16(packet, sizeof(packet) - 2))) return false;
+    __queue_depth = max(min(unpack_unsigned_long(packet + 2), _stream_writer_queue_depth_max()), 1);
+    __rx_lfsr = 255;
+    __credits = __queue_depth;
+    return true;
+}
 
-        if (credits > 0) {
-            uint8_t *out_data = NULL;
-            uint32_t out_data_len = 0;
-            if ((!callback(&out_data, &out_data_len)) || (!out_data) || (!out_data_len)) return;
-            _set_packet(packet, 0x542E, (uint8_t *) &out_data_len, sizeof(out_data_len));
-            if (!_stream_put_bytes(packet, sizeof(packet), 1000)) return;
-            if (!_stream_put_bytes(out_data, out_data_len, write_timeout)) return;
-            credits -= 1;
-        }
+bool rpc::stream_writer_loop(rpc_stream_writer_callback_t callback, unsigned long write_timeout)
+{
+    uint8_t packet[8];
+
+    if (__credits <= (__queue_depth / 2)) {
+        if ((!_stream_get_bytes(packet, 1, 1000)) || (packet[0] != __rx_lfsr)) return false;
+        __rx_lfsr = (__rx_lfsr >> 1) ^ ((__rx_lfsr & 1) ? 0xB8 : 0x00);
+        __credits += 1;
     }
+
+    if (__credits > 0) {
+        uint8_t *out_data = NULL;
+        uint32_t out_data_len = 0;
+        if ((!callback(&out_data, &out_data_len)) || (!out_data) || (!out_data_len)) return false;
+        _set_packet(packet, 0x542E, (uint8_t *) &out_data_len, sizeof(out_data_len));
+        if (!_stream_put_bytes(packet, sizeof(packet), 1000)) return false;
+        if (!_stream_put_bytes(out_data, out_data_len, write_timeout)) return false;
+        __credits -= 1;
+    }
+
+    return true;
 }
 
 bool rpc::_stream_get_bytes(uint8_t *buff, size_t size, unsigned long timeout)
