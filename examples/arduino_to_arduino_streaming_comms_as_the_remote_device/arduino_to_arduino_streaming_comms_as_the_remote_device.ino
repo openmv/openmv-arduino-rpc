@@ -67,7 +67,7 @@ openmv::rpc_callback_buffer<8> callback_buffer; // All RPC objects share this bu
 // openmv::rpc_hardware_serial2_uart_slave -> Serial2
 // openmv::rpc_hardware_serial3_uart_slave -> Serial3
 //
-// openmv::rpc_hardware_serial3_uart_slave interface(115200);
+// openmv::rpc_hardware_serial_uart_slave interface(115200);
 
 // Uncomment the below line to setup for be controlled over a software UART.
 //

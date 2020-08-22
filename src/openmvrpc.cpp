@@ -173,7 +173,7 @@ void rpc::_set_packet(uint8_t *buff, uint16_t magic_value, uint8_t *data, size_t
     buff[size + 3] = crc >> 8;
 }
 
-bool rpc::stream_reader_setup(uint32_t queue_depth = 1)
+bool rpc::stream_reader_setup(uint32_t queue_depth)
 {
     uint8_t packet[8];
     _set_packet(packet, 0xEDF6, (uint8_t *) &queue_depth, sizeof(queue_depth));
@@ -663,7 +663,6 @@ void rpc_slave::loop(unsigned long send_timeout, unsigned long recv_timeout)
                         break;
                     }
                 }
-
                 break;
             }
         }
@@ -873,7 +872,7 @@ void rpc_hardware_serial##name##_uart_master::_flush() \
 bool rpc_hardware_serial##name##_uart_master::get_bytes(uint8_t *buff, size_t size, unsigned long timeout) \
 { \
     Serial##name.setTimeout(timeout + 1); \
-    bool ok = (Serial##name.readBytes(buff, size) == size) && (!_same(buff, size)); \
+    bool ok = (Serial##name.readBytes((char *) buff, size) == size) && (!_same(buff, size)); \
     if (!ok) delay(_get_short_timeout); \
     return ok; \
 } \
@@ -881,27 +880,27 @@ bool rpc_hardware_serial##name##_uart_master::get_bytes(uint8_t *buff, size_t si
 bool rpc_hardware_serial##name##_uart_master::put_bytes(uint8_t *buff, size_t size, unsigned long timeout) \
 { \
     (void) timeout; \
-    return Serial##name.write(buff, size) == size; \
+    return Serial##name.write((char *) buff, size) == size; \
 }
 
-#ifdef HAVE_HWSERIAL0
+#ifdef SERIAL_PORT_HARDWARE
 RPC_HARDWARE_SERIAL_UART_MASTER_IMPLEMENTATION()
 #endif
 
-#ifdef HAVE_HWSERIAL1
+#ifdef SERIAL_PORT_HARDWARE1
 RPC_HARDWARE_SERIAL_UART_MASTER_IMPLEMENTATION(1)
 #endif
 
-#ifdef HAVE_HWSERIAL2
+#ifdef SERIAL_PORT_HARDWARE2
 RPC_HARDWARE_SERIAL_UART_MASTER_IMPLEMENTATION(2)
 #endif
 
-#ifdef HAVE_HWSERIAL3
+#ifdef SERIAL_PORT_HARDWARE3
 RPC_HARDWARE_SERIAL_UART_MASTER_IMPLEMENTATION(3)
 #endif
 
-#ifdef HAVE_CDCSERIAL
-RPC_HARDWARE_SERIAL_UART_MASTER_IMPLEMENTATION()
+#ifdef SERIAL_PORT_USBVIRTUAL
+RPC_HARDWARE_SERIAL_UART_MASTER_IMPLEMENTATION(USB)
 #endif
 
 #define RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION(name) \
@@ -913,36 +912,36 @@ void rpc_hardware_serial##name##_uart_slave::_flush() \
 bool rpc_hardware_serial##name##_uart_slave::get_bytes(uint8_t *buff, size_t size, unsigned long timeout) \
 { \
     Serial##name.setTimeout(timeout + 1); \
-    return Serial##name.readBytes(buff, size) == size; \
+    return Serial##name.readBytes((char *) buff, size) == size; \
 } \
 \
 bool rpc_hardware_serial##name##_uart_slave::put_bytes(uint8_t *buff, size_t size, unsigned long timeout) \
 { \
     (void) timeout; \
-    return Serial##name.write(buff, size) == size; \
+    return Serial##name.write((char *) buff, size) == size; \
 }
 
-#ifdef HAVE_HWSERIAL0
+#ifdef SERIAL_PORT_HARDWARE
 RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION()
 #endif
 
-#ifdef HAVE_HWSERIAL1
+#ifdef SERIAL_PORT_HARDWARE1
 RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION(1)
 #endif
 
-#ifdef HAVE_HWSERIAL2
+#ifdef SERIAL_PORT_HARDWARE2
 RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION(2)
 #endif
 
-#ifdef HAVE_HWSERIAL3
+#ifdef SERIAL_PORT_HARDWARE3
 RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION(3)
 #endif
 
-#ifdef HAVE_CDCSERIAL
-RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION()
+#ifdef SERIAL_PORT_USBVIRTUAL
+RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION(USB)
 #endif
 
-#ifndef ARDUINO_ARCH_SAM
+#ifdef ARDUINO_ARCH_AVR
 void rpc_software_serial_uart_master::_flush()
 {
     __serial.listen();
@@ -1004,4 +1003,4 @@ bool rpc_software_serial_uart_slave::put_bytes(uint8_t *buff, size_t size, unsig
     (void) timeout;
     return __serial.write(buff, size) == size;
 }
-#endif // ARDUINO_ARCH_SAM
+#endif // ARDUINO_ARCH_AVR

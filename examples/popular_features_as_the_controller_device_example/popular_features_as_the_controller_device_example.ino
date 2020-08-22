@@ -28,7 +28,7 @@ openmv::rpc_scratch_buffer<256> scratch_buffer; // All RPC objects share this bu
 // NOTE: Master and slave message ids and can bit rates must match. Connect master can high to slave
 //       can high and master can low to slave can lo. The can bus must be terminated with 120 ohms.
 //
-openmv::rpc_can_master interface(0x7FF, 250E3);
+// openmv::rpc_can_master interface(0x7FF, 250E3);
 
 // Uncomment the below line to setup your Arduino for controlling over I2C.
 //
@@ -78,7 +78,7 @@ openmv::rpc_can_master interface(0x7FF, 250E3);
 // NOTE: Master and slave baud rates must match. Connect master tx to slave rx and master rx to
 //       slave tx. Finally, both devices must share a common ground.
 //
-// openmv::rpc_software_serial_uart_master interface(2, 3, 19200);
+openmv::rpc_software_serial_uart_master interface(2, 3, 19200);
 
 void setup() {
 

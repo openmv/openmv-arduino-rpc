@@ -9,9 +9,9 @@
 
 #include <Arduino.h>
 #include <CAN.h>
-#ifndef ARDUINO_ARCH_SAM
+#ifdef ARDUINO_ARCH_AVR
 #include <SoftwareSerial.h>
-#endif // ARDUINO_ARCH_SAM
+#endif // ARDUINO_ARCH_AVR
 #include <SPI.h>
 #include <Wire.h>
 
@@ -325,31 +325,24 @@ private: \
     rpc_hardware_serial##name##_uart_master(const rpc_hardware_serial##name##_uart_master &); \
 };
 
-#ifdef ARDUINO_ARCH_SAM
-#define HAVE_HWSERIAL0
-#define HAVE_HWSERIAL1
-#define HAVE_HWSERIAL2
-#define HAVE_HWSERIAL3
-#endif
-
-#ifdef HAVE_HWSERIAL0
+#ifdef SERIAL_PORT_HARDWARE
 RPC_HARDWARE_SERIAL_UART_MASTER()
 #endif
 
-#ifdef HAVE_HWSERIAL1
+#ifdef SERIAL_PORT_HARDWARE1
 RPC_HARDWARE_SERIAL_UART_MASTER(1)
 #endif
 
-#ifdef HAVE_HWSERIAL2
+#ifdef SERIAL_PORT_HARDWARE2
 RPC_HARDWARE_SERIAL_UART_MASTER(2)
 #endif
 
-#ifdef HAVE_HWSERIAL3
+#ifdef SERIAL_PORT_HARDWARE3
 RPC_HARDWARE_SERIAL_UART_MASTER(3)
 #endif
 
-#ifdef HAVE_CDCSERIAL
-RPC_HARDWARE_SERIAL_UART_MASTER()
+#ifdef SERIAL_PORT_USBVIRTUAL
+RPC_HARDWARE_SERIAL_UART_MASTER(USB)
 #endif
 
 #define RPC_HARDWARE_SERIAL_UART_SLAVE(name) \
@@ -368,27 +361,27 @@ private: \
     rpc_hardware_serial##name##_uart_slave(const rpc_hardware_serial##name##_uart_slave &); \
 };
 
-#ifdef HAVE_HWSERIAL0
+#ifdef SERIAL_PORT_HARDWARE
 RPC_HARDWARE_SERIAL_UART_SLAVE()
 #endif
 
-#ifdef HAVE_HWSERIAL1
+#ifdef SERIAL_PORT_HARDWARE1
 RPC_HARDWARE_SERIAL_UART_SLAVE(1)
 #endif
 
-#ifdef HAVE_HWSERIAL2
+#ifdef SERIAL_PORT_HARDWARE2
 RPC_HARDWARE_SERIAL_UART_SLAVE(2)
 #endif
 
-#ifdef HAVE_HWSERIAL3
+#ifdef SERIAL_PORT_HARDWARE3
 RPC_HARDWARE_SERIAL_UART_SLAVE(3)
 #endif
 
-#ifdef HAVE_CDCSERIAL
-RPC_HARDWARE_SERIAL_UART_SLAVE()
+#ifdef SERIAL_PORT_USBVIRTUAL
+RPC_HARDWARE_SERIAL_UART_SLAVE(USB)
 #endif
 
-#ifndef ARDUINO_ARCH_SAM
+#ifdef ARDUINO_ARCH_AVR
 class rpc_software_serial_uart_master : public rpc_master
 {
 public:
@@ -418,7 +411,7 @@ private:
     SoftwareSerial __serial;
     rpc_software_serial_uart_slave(const rpc_software_serial_uart_slave &);   
 };
-#endif // ARDUINO_ARCH_SAM
+#endif // ARDUINO_ARCH_AVR
 
 } // namespace openmv
 
