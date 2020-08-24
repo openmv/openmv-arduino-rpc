@@ -6,8 +6,8 @@ The rpc library allows you to connect your Arduino to your OpenMV Cam, another A
 
 Please look at the following scripts for how to control your OpenMV Cam from your Arduino:
 
-* [Popular Features](popular_features_as_the_controller_device_example/popular_features_as_the_controller_device_example.ino)
-* [Image Transfer](image_transfer_jpg_as_the_controller_device_example/image_transfer_jpg_as_the_controller_device_example.ino)
+* [Popular Features](examples/popular_features_as_the_controller_device_example/popular_features_as_the_controller_device_example.ino)
+* [Image Transfer](examples/image_transfer_jpg_as_the_controller_device_example/image_transfer_jpg_as_the_controller_device_example.ino)
 
 The sketches above work with scripts running onboard the OpenMV Cam. The `Popular Features` sketch shows off how to trivially use an Arduino to access powerful features onboard the OpenMV Cam.
 
@@ -110,7 +110,7 @@ And if you need to pass complex arguments this is easy too:
 
 In this example above we're now using the `call()` method so we can pass arugments. So, we define an array of 6 color thresholds that we expect the `color_detection` function on the OpenMV Cam to support. Then, we just have to pass the array of thresholds and the size of the array to `call()`.
 
-For how to use `call_no_copy()` and `call_no_copy_no_args()` see the [Image Transfer](image_transfer_jpg_as_the_controller_device_example/image_transfer_jpg_as_the_controller_device_example.ino) sketch which makes use of this method to save RAM.
+For how to use `call_no_copy()` and `call_no_copy_no_args()` see the [Image Transfer](examples/image_transfer_jpg_as_the_controller_device_example/image_transfer_jpg_as_the_controller_device_example.ino) sketch which makes use of this method to save RAM.
 
 _`call_no_copy()` is the complete RPC library call function. However, it's not the most beginner friendly so the other call methods exist to reduce the amount of typing required._
 
