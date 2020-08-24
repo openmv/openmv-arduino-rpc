@@ -105,9 +105,11 @@ extern size_t __dict_alloced;
 template <int size> class rpc_callback_buffer
 {
 public:
-    rpc_callback_buffer() { __dict = buff; __dict_len = sizeof(buff); __dict_alloced = 0; }
+    rpc_callback_buffer() { __dict = buff; __dict_len = size; __dict_alloced = 0; }
     ~rpc_callback_buffer() {}
     size_t buffer_size() { return size; }
+    size_t buffer_free() { return size - __dict_alloced; }
+    size_t buffer_used() { return __dict_alloced; }
 private:
     rpc_callback_buffer(const rpc_callback_buffer &);
     rpc_callback_entry_t buff[size];
@@ -197,14 +199,12 @@ public:
     bool register_callback(const __FlashStringHelper *name, rpc_callback_with_args_returns_result_no_copy_t callback);
     bool register_callback(const String &name, rpc_callback_with_args_returns_result_no_copy_t callback);
     bool register_callback(const char *name, rpc_callback_with_args_returns_result_no_copy_t callback);
-    void schedule_callback(rpc_callback_t callback);
-    void loop(unsigned long send_timeout=1000, unsigned long recv_timeout=1000);
+    bool loop(unsigned long recv_timeout=100, unsigned long send_timeout=100);
 protected:
     const unsigned long _put_short_timeout_reset = 2;
     const unsigned long _get_short_timeout_reset = 2;
 private:
     rpc_slave(const rpc_slave &);
-    rpc_callback_t __schedule_cb = NULL;
     uint8_t __in_command_header_buf[12];
     uint8_t __out_command_header_ack[4];
     uint8_t __out_command_data_ack[4];
@@ -243,8 +243,6 @@ public:
     virtual bool put_bytes(uint8_t *data, size_t size, unsigned long timeout) override;
     virtual void begin() override { CAN.begin(__bit_rate); CAN.filter(__message_id); }
     virtual void end() override { CAN.end(); }
-    void set_message_id(int message_id) { __message_id = message_id; }
-    int get_message_id() { return __message_id; }
 private:
     int __message_id;
     long __bit_rate;

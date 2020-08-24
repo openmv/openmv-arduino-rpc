@@ -15,19 +15,25 @@ rpc_hardware_serial_uart_master	KEYWORD1
 rpc_hardware_serial1_uart_master	KEYWORD1
 rpc_hardware_serial2_uart_master	KEYWORD1
 rpc_hardware_serial3_uart_master	KEYWORD1
+rpc_hardware_serialUSB_uart_master	KEYWORD1
 
 rpc_hardware_serial_uart_slave	KEYWORD1
 rpc_hardware_serial1_uart_slave	KEYWORD1
 rpc_hardware_serial2_uart_slave	KEYWORD1
 rpc_hardware_serial3_uart_slave	KEYWORD1
+rpc_hardware_serialUSB_uart_slave	KEYWORD1
 
 rpc_software_serial_uart_master	KEYWORD1
 rpc_software_serial_uart_slave	KEYWORD1
 
 buffer_size	KEYWORD2
+buffer_free	KEYWORD2
+buffer_used	KEYWORD2
 
-stream_reader	KEYWORD2
-stream_writer	KEYWORD2
+stream_reader_setup	KEYWORD2
+stream_reader_loop	KEYWORD2
+stream_writer_setup	KEYWORD2
+stream_writer_loop	KEYWORD2
 
 call_no_copy_no_args	KEYWORD2
 call_no_copy	KEYWORD2
@@ -40,6 +46,8 @@ loop	KEYWORD2
 
 get_bytes	KEYWORD2
 put_bytes	KEYWORD2
+begin	KEYWORD2
+end	KEYWORD2
 
 set_message_id	KEYWORD2
 get_message_id	KEYWORD2

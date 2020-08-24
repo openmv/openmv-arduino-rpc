@@ -620,12 +620,7 @@ bool rpc_slave::register_callback(const char *name, rpc_callback_with_args_retur
     return __register_callback(_hash(name), __CALLBACK_WITH_ARGS_RETURNS_RESULT_NO_COPY, (void *) callback);
 }
 
-void rpc_slave::schedule_callback(rpc_callback_t callback)
-{
-    __schedule_cb = callback;
-}
-
-void rpc_slave::loop(unsigned long send_timeout, unsigned long recv_timeout)
+bool rpc_slave::loop(unsigned long recv_timeout, unsigned long send_timeout)
 {
     uint32_t command;
     uint8_t *data;
@@ -663,16 +658,15 @@ void rpc_slave::loop(unsigned long send_timeout, unsigned long recv_timeout)
                         break;
                     }
                 }
+
                 break;
             }
         }
 
-        if (__put_result(out_data, out_data_len, send_timeout) && __schedule_cb) {
-            __schedule_cb();
-        }
-
-        __schedule_cb = NULL;
+        return __put_result(out_data, out_data_len, send_timeout);
     }
+
+    return false;
 }
 
 void rpc_can_master::_flush()

@@ -161,7 +161,9 @@ void loop() {
                 size_t jpg_data_len;
 
                 // Transfer the bytes. jpg_data and jpg_data_len on success will point to the data transferred.
-                Serial.println(F("Reading bytes..."));
+                Serial.print(F("Reading bytes "));
+                Serial.print((arg.offset * 100) / jpeg_size);
+                Serial.println(F("%"));
                 if (interface.call_no_copy(F("jpeg_image_read"), &arg, sizeof(arg), &jpg_data, &jpg_data_len)) {
                     Serial.println(F("Writing bytes..."));
 
