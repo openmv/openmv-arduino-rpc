@@ -18,21 +18,18 @@ const int SD_CARD_CHIP_SELECT_PIN = 4;
 // We need to define a scratch buffer for holding messages. The maximum amount of data
 // you may pass in any on direction is limited to the size of this buffer.
 
-openmv::rpc_scratch_buffer<256> scratch_buffer; // All RPC objects share this buffer.
+// PLEASE NOTE THAT THE OPENMV CAM OUTPUTS BURST DATA AT A VERY HIGH RATE BACK TO BACK
+// THAT SOME ARDUINOS MAY NOT BE ABLE TO HANDLE. ONLY MAKE THE BUFFER SIZE LARGER FOR
+// INTERFACES WHICH CAN HANDLE A HIGH BURST RATE.
+
+openmv::rpc_scratch_buffer<32> scratch_buffer; // All RPC objects share this buffer.
 
 ///////////////////////////////////////////////////////////////
 // Choose the interface you wish to control an OpenMV Cam over.
 ///////////////////////////////////////////////////////////////
 
-// Uncomment the below line to setup your Arduino for controlling over CAN.
-//
-// * message_id - CAN message to use for data transport on the can bus (11-bit).
-// * bit_rate - CAN bit rate.
-//
-// NOTE: Master and slave message ids and can bit rates must match. Connect master can high to slave
-//       can high and master can low to slave can lo. The can bus must be terminated with 120 ohms.
-//
-// openmv::rpc_can_master interface(0x7FF, 250E3);
+// CAN AND SPI INTERFACES CANNOT BE USED BECAUSE THE SD CARD LIBRARY
+// USES THE SPI BUS AND DOES NOT SHARE SPI BUS ACCESS NICELY. 
 
 // Uncomment the below line to setup your Arduino for controlling over I2C.
 //
@@ -43,17 +40,6 @@ openmv::rpc_scratch_buffer<256> scratch_buffer; // All RPC objects share this bu
 //       to slave sda. You must use external pull ups. Finally, both devices must share a ground.
 //
 // openmv::rpc_i2c_master interface(0x12, 100000);
-
-// Uncomment the below line to setup your Arduino for controlling over SPI.
-//
-// * cs_pin - Slave Select Pin.
-// * freq - SPI Bus Clock Frequency.
-// * spi_mode - See (https://www.arduino.cc/en/reference/SPI)
-//
-// NOTE: Master and slave settings much match. Connect CS, SCLK, MOSI, MISO to CS, SCLK, MOSI, MISO.
-//       Finally, both devices must share a common ground.
-//
-// openmv::rpc_spi_master interface(10, 1000000, SPI_MODE2);
 
 // Uncomment the below line to setup your Arduino for controlling over a hardware UART.
 //
@@ -115,14 +101,14 @@ void setup() {
 
 void loop() {
     // The script running on the OpenMV Cam will evaluate the string below to set the pixformat and framesize.
-    const char pixformat_and_framesize[] = "Sensor.RGB565,Sensor.QVGA";
+    const char pixformat_and_framesize[] = "sensor.RGB565,sensor.QQQVGA";
     uint32_t jpeg_size;
 
     // jpeg_image_snapshot will take a jpeg picture, store it in memory on the OpenMV Cam, and then return the
     // jpg image size in bytes for reading by the Arduino.
     Serial.println(F("Taking a pic..."));
     if (interface.call(F("jpeg_image_snapshot"),
-                       pixformat_and_framesize, sizeof(pixformat_and_framesize),
+                       pixformat_and_framesize, sizeof(pixformat_and_framesize) - 1, // Do not send NULL terminator
                        &jpeg_size, sizeof(jpeg_size))) {
         Serial.println(F("Success"));
 
@@ -130,16 +116,16 @@ void loop() {
         // 5-digit file name string based on a counter that will increment each time we save an image.
         static uint16_t file_counter = 0;
         char filename[] = "00000.JPG";
-        filename[0] = ((file_counter / 10000) % 10);
-        filename[1] = ((file_counter / 1000) % 10);
-        filename[2] = ((file_counter / 100) % 10);
-        filename[3] = ((file_counter / 10) % 10);
-        filename[4] = ((file_counter / 1) % 10);
+        filename[0] += ((file_counter / 10000) % 10);
+        filename[1] += ((file_counter / 1000) % 10);
+        filename[2] += ((file_counter / 100) % 10);
+        filename[3] += ((file_counter / 10) % 10);
+        filename[4] += ((file_counter / 1) % 10);
 
         // Try to create the filename. If a file already exists with the same name it will be deleted.
         Serial.println(F("Creating jpg file..."));
-        SD.remove(filename);
-        File jpg_file = SD.open(filename, FILE_WRITE);
+        Serial.println(filename);
+        File jpg_file = SD.open(filename, O_WRITE | O_CREAT | O_TRUNC);
 
         if (jpg_file) {
             // jpeg_image_read takes two arguments, offset and size.
