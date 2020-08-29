@@ -59,7 +59,7 @@ There are a few different variants of the `call()` method on your Arduino for sp
 
 On success the return value will be `true`. On failure it will be `false` or if you received a zero-length result if the above flag is set. On success the return data buffer will have the result data copied to it (up to the size of the buffer), note that there's no way to know the return data length if it's variable with `call()` - use `call_no_copy()` for variable length return data. On failure the return data buffer will be zeroed.
 
-_The point of returning false if you receive a zero-length result is because the RPC library on the OpenMV Cam returns zero-length results when a function like "face_detection" finds no faces. This saves having to reutrn the received data length for fixed-length data structure situations and having to write more code per RPC call._
+_The point of returning false if you receive a zero-length result is because the RPC library on the OpenMV Cam returns zero-length results when a function like "face_detection" finds no faces. This saves having to return the received data length for fixed-length data structure situations and having to write more code per RPC call._
 
 `call()` is designed for when you want to call a remote function and have to pass arguments. `call_no_args()` drops the the required pointer and length arguments above so you don't have to pass NULL and 0 for remote function calls that take no arugments. `call_no_copy()` modifies the function signature slightly to minimize RAM use by instead returning a pointer into the scratch buffer versus copying data to the target buffer you reference using the regular `call()` method. This version of the `call()` method is for advanced users but can greatly save RAM. `call_no_copy()` takes the following arguments:
 
@@ -260,7 +260,7 @@ Note that the default `Serial` debug port shares the same I/O pins as `rpc_hardw
 
 RPC calls take time. So much time that it's not possible to max out your interface bandwidth using them. So, the RPC library supports stream mode over each interface which will allow you to push data at the maximum possible speed your interface supports. Please see the [Arduino Stream Master](examples/arduino_to_arduino_communication_as_the_controller_device/arduino_to_arduino_communication_as_the_controller_device.ino) and [Arduino Stream Slave](examples/arduino_to_arduino_communication_as_the_remote_device/arduino_to_arduino_communication_as_the_remote_device.ino) sketches for how to use the RPC library in stream mode. Note that we do not supply examples for how to use the RPC library with the OpenMV Cam in stream mode as the OpenMV Cam will trivially overrun the data buffers on all but the most advanced Arduinos.
 
-Streaming mode is built ontop of successful RPC calls. Once you've managed to perform one you know that both the master and slave device are in sync. At this point the slave and master device can both enter stream mode at the same time to send data one direction (the RPC library is fundamentally half duplux which allows it to work over any interface).
+Streaming mode is built on top of successful RPC calls. Once you've managed to perform one you know that both the master and slave device are in sync. At this point the slave and master device can both enter stream mode at the same time to send data one direction (the RPC library is fundamentally half duplux which allows it to work over any interface).
 
 On the sender side (which can either be the master or slave) you need to execute `bool stream_writer_setup()` and on the receiver side `bool stream_reader_setup(uint32_t queue_depth = 1)`. The `queue_depth` value passed by the reader should be a number from 1 to 255 which defines how many packets the sender is allowed to send without acknowledgement from the reader. This argument is forced to `1` on I2C/SPI interfaces which cannot handle full duplex traffic. The larger the value of `queue_depth` the more the writer and reader are decopuled from one another allowing the writer to generate packets as fast as possible without the overhead of the reader processing those packets and returning responses. That said, this argument should generally be `1` for Arduino Microcontrollers.
 
@@ -298,7 +298,7 @@ The beauty of all of this is that you can intermix slow RPC calls with high spee
 
 ## RAW Link Access
 
-For various reasons you may wish to send data on the underlying interface. You can do so via `get_bytes()` and `put_bytes()` which all master/slave interfaces implement.
+For various reasons you may wish to send data on the underlying interface. You can do so via `get_bytes()` and `put_bytes()` which all master/slave interfaces implement. Both the master and the slave should be in sync before using these calls, then the master and slave should call `get_bytes()` and `put_bytes()` in the direction of data transfer happening with the same `size` and `timeout`.
 
 #### bool get_bytes(uint8_t *buff, size_t size, unsigned long timeout)
 
