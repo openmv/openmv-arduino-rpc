@@ -13,13 +13,13 @@
 // followed by a UINT32 command, UINT32 payload length and a UINT16 CRC
 // The back and forth protocol works like this:
 // (all integers are in little-endian order)
-// 
+//
 // Send Command:
 // Master --> Slave magic HEADER value, cmd, payload len, CRC
 // Master <-- Slave magic HEADER ack + CRC (4 bytes total)
 // Master --> Slave magic DATA value, n-byte payload, CRC
 // Master <-- Slave magic DATA ack + UINT16 CRC (4 bytes total)
-// 
+//
 // Get Result:
 // Master --> Slave magic RESULT value, CRC
 // Master <-- Slave magic RESULT ack, length, CRC
@@ -307,7 +307,7 @@ bool rpc_master::__get_result(uint8_t **data, size_t *size, unsigned long timeou
 }
 
 bool rpc_master::call_no_copy_no_args(const __FlashStringHelper *name,
-                                      void **result_data, size_t *result_data_len, 
+                                      void **result_data, size_t *result_data_len,
                                       unsigned long send_timeout, unsigned long recv_timeout)
 {
     return __put_command(_hash(name), NULL, 0, send_timeout)
@@ -315,7 +315,7 @@ bool rpc_master::call_no_copy_no_args(const __FlashStringHelper *name,
 }
 
 bool rpc_master::call_no_copy_no_args(const String &name,
-                                      void **result_data, size_t *result_data_len, 
+                                      void **result_data, size_t *result_data_len,
                                       unsigned long send_timeout, unsigned long recv_timeout)
 {
     return __put_command(_hash(name.c_str(), name.length()), NULL, 0, send_timeout)
@@ -323,7 +323,7 @@ bool rpc_master::call_no_copy_no_args(const String &name,
 }
 
 bool rpc_master::call_no_copy_no_args(const char *name,
-                                      void **result_data, size_t *result_data_len, 
+                                      void **result_data, size_t *result_data_len,
                                       unsigned long send_timeout, unsigned long recv_timeout)
 {
     return __put_command(_hash(name), NULL, 0, send_timeout)
@@ -332,7 +332,7 @@ bool rpc_master::call_no_copy_no_args(const char *name,
 
 bool rpc_master::call_no_copy(const __FlashStringHelper *name,
                               void *command_data, size_t command_data_len,
-                              void **result_data, size_t *result_data_len, 
+                              void **result_data, size_t *result_data_len,
                               unsigned long send_timeout, unsigned long recv_timeout)
 {
     return __put_command(_hash(name), (uint8_t *) command_data, command_data_len, send_timeout)
@@ -341,7 +341,7 @@ bool rpc_master::call_no_copy(const __FlashStringHelper *name,
 
 bool rpc_master::call_no_copy(const String &name,
                               void *command_data, size_t command_data_len,
-                              void **result_data, size_t *result_data_len, 
+                              void **result_data, size_t *result_data_len,
                               unsigned long send_timeout, unsigned long recv_timeout)
 {
     return __put_command(_hash(name.c_str(), name.length()), (uint8_t *) command_data, command_data_len, send_timeout)
@@ -350,7 +350,7 @@ bool rpc_master::call_no_copy(const String &name,
 
 bool rpc_master::call_no_copy(const char *name,
                               void *command_data, size_t command_data_len,
-                              void **result_data, size_t *result_data_len, 
+                              void **result_data, size_t *result_data_len,
                               unsigned long send_timeout, unsigned long recv_timeout)
 {
     return __put_command(_hash(name), (uint8_t *) command_data, command_data_len, send_timeout)
@@ -474,7 +474,7 @@ bool rpc_slave::__get_command(uint32_t *command, uint8_t **data, size_t *size, u
         _get_short_timeout = min(_get_short_timeout + 1, timeout);
     }
 
-    return false; 
+    return false;
 }
 
 bool rpc_slave::__put_result(uint8_t *data, size_t size, unsigned long timeout)
@@ -857,16 +857,16 @@ bool rpc_spi_master::put_bytes(uint8_t *data, size_t size, unsigned long timeout
     return true;
 }
 
-#define RPC_HARDWARE_SERIAL_UART_MASTER_IMPLEMENTATION(name) \
+#define RPC_HARDWARE_SERIAL_UART_MASTER_IMPLEMENTATION(name, port) \
 void rpc_hardware_serial##name##_uart_master::_flush() \
 { \
-    for (int i = Serial##name.available(); i > 0; i--) Serial##name.read(); \
+    for (int i = port.available(); i > 0; i--) port.read(); \
 } \
 \
 bool rpc_hardware_serial##name##_uart_master::get_bytes(uint8_t *buff, size_t size, unsigned long timeout) \
 { \
-    Serial##name.setTimeout(timeout + 1); \
-    bool ok = (Serial##name.readBytes((char *) buff, size) == size) && (!_same(buff, size)); \
+    port.setTimeout(timeout + 1); \
+    bool ok = (port.readBytes((char *) buff, size) == size) && (!_same(buff, size)); \
     if (!ok) delay(_get_short_timeout); \
     return ok; \
 } \
@@ -874,66 +874,70 @@ bool rpc_hardware_serial##name##_uart_master::get_bytes(uint8_t *buff, size_t si
 bool rpc_hardware_serial##name##_uart_master::put_bytes(uint8_t *buff, size_t size, unsigned long timeout) \
 { \
     (void) timeout; \
-    return Serial##name.write((char *) buff, size) == size; \
+    return port.write((char *) buff, size) == size; \
 }
 
 #ifdef SERIAL_PORT_HARDWARE
-RPC_HARDWARE_SERIAL_UART_MASTER_IMPLEMENTATION()
+RPC_HARDWARE_SERIAL_UART_MASTER_IMPLEMENTATION(,SERIAL_PORT_HARDWARE)
 #endif
 
 #ifdef SERIAL_PORT_HARDWARE1
-RPC_HARDWARE_SERIAL_UART_MASTER_IMPLEMENTATION(1)
+RPC_HARDWARE_SERIAL_UART_MASTER_IMPLEMENTATION(1,SERIAL_PORT_HARDWARE1)
 #endif
 
 #ifdef SERIAL_PORT_HARDWARE2
-RPC_HARDWARE_SERIAL_UART_MASTER_IMPLEMENTATION(2)
+RPC_HARDWARE_SERIAL_UART_MASTER_IMPLEMENTATION(2,SERIAL_PORT_HARDWARE2)
 #endif
 
 #ifdef SERIAL_PORT_HARDWARE3
-RPC_HARDWARE_SERIAL_UART_MASTER_IMPLEMENTATION(3)
+RPC_HARDWARE_SERIAL_UART_MASTER_IMPLEMENTATION(3,SERIAL_PORT_HARDWARE3)
 #endif
 
 #ifdef SERIAL_PORT_USBVIRTUAL
-RPC_HARDWARE_SERIAL_UART_MASTER_IMPLEMENTATION(USB)
+RPC_HARDWARE_SERIAL_UART_MASTER_IMPLEMENTATION(USB,SERIAL_PORT_USBVIRTUAL)
 #endif
 
-#define RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION(name) \
+#undef RPC_HARDWARE_SERIAL_UART_MASTER_IMPLEMENTATION
+
+#define RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION(name, port) \
 void rpc_hardware_serial##name##_uart_slave::_flush() \
 { \
-    for (int i = Serial##name.available(); i > 0; i--) Serial##name.read(); \
+    for (int i = port.available(); i > 0; i--) port.read(); \
 } \
 \
 bool rpc_hardware_serial##name##_uart_slave::get_bytes(uint8_t *buff, size_t size, unsigned long timeout) \
 { \
-    Serial##name.setTimeout(timeout + 1); \
-    return Serial##name.readBytes((char *) buff, size) == size; \
+    port.setTimeout(timeout + 1); \
+    return port.readBytes((char *) buff, size) == size; \
 } \
 \
 bool rpc_hardware_serial##name##_uart_slave::put_bytes(uint8_t *buff, size_t size, unsigned long timeout) \
 { \
     (void) timeout; \
-    return Serial##name.write((char *) buff, size) == size; \
+    return port.write((char *) buff, size) == size; \
 }
 
 #ifdef SERIAL_PORT_HARDWARE
-RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION()
+RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION(,SERIAL_PORT_HARDWARE)
 #endif
 
 #ifdef SERIAL_PORT_HARDWARE1
-RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION(1)
+RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION(1,SERIAL_PORT_HARDWARE1)
 #endif
 
 #ifdef SERIAL_PORT_HARDWARE2
-RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION(2)
+RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION(2,SERIAL_PORT_HARDWARE2)
 #endif
 
 #ifdef SERIAL_PORT_HARDWARE3
-RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION(3)
+RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION(3,SERIAL_PORT_HARDWARE3)
 #endif
 
 #ifdef SERIAL_PORT_USBVIRTUAL
-RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION(USB)
+RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION(USB,SERIAL_PORT_USBVIRTUAL)
 #endif
+
+#undef RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION
 
 #ifdef ARDUINO_ARCH_AVR
 void rpc_software_serial_uart_master::_flush()

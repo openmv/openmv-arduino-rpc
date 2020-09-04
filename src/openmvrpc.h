@@ -307,7 +307,7 @@ private:
     rpc_spi_master(const rpc_spi_master &);
 };
 
-#define RPC_HARDWARE_SERIAL_UART_MASTER(name) \
+#define RPC_HARDWARE_SERIAL_UART_MASTER(name, port) \
 class rpc_hardware_serial##name##_uart_master : public rpc_master \
 { \
 public: \
@@ -316,34 +316,36 @@ public: \
     virtual void _flush() override; \
     virtual bool get_bytes(uint8_t *buff, size_t size, unsigned long timeout) override; \
     virtual bool put_bytes(uint8_t *data, size_t size, unsigned long timeout) override; \
-    virtual void begin() override { Serial##name.begin(__baudrate); } \
-    virtual void end() override { Serial##name.end(); } \
+    virtual void begin() override { port.begin(__baudrate); } \
+    virtual void end() override { port.end(); } \
 private: \
     unsigned long __baudrate; \
     rpc_hardware_serial##name##_uart_master(const rpc_hardware_serial##name##_uart_master &); \
 };
 
 #ifdef SERIAL_PORT_HARDWARE
-RPC_HARDWARE_SERIAL_UART_MASTER()
+RPC_HARDWARE_SERIAL_UART_MASTER(,SERIAL_PORT_HARDWARE)
 #endif
 
 #ifdef SERIAL_PORT_HARDWARE1
-RPC_HARDWARE_SERIAL_UART_MASTER(1)
+RPC_HARDWARE_SERIAL_UART_MASTER(1,SERIAL_PORT_HARDWARE1)
 #endif
 
 #ifdef SERIAL_PORT_HARDWARE2
-RPC_HARDWARE_SERIAL_UART_MASTER(2)
+RPC_HARDWARE_SERIAL_UART_MASTER(2,SERIAL_PORT_HARDWARE2)
 #endif
 
 #ifdef SERIAL_PORT_HARDWARE3
-RPC_HARDWARE_SERIAL_UART_MASTER(3)
+RPC_HARDWARE_SERIAL_UART_MASTER(3,SERIAL_PORT_HARDWARE3)
 #endif
 
 #ifdef SERIAL_PORT_USBVIRTUAL
-RPC_HARDWARE_SERIAL_UART_MASTER(USB)
+RPC_HARDWARE_SERIAL_UART_MASTER(USB,SERIAL_PORT_USBVIRTUAL)
 #endif
 
-#define RPC_HARDWARE_SERIAL_UART_SLAVE(name) \
+#undef RPC_HARDWARE_SERIAL_UART_MASTER
+
+#define RPC_HARDWARE_SERIAL_UART_SLAVE(name, port) \
 class rpc_hardware_serial##name##_uart_slave : public rpc_slave \
 { \
 public: \
@@ -352,32 +354,34 @@ public: \
     virtual void _flush() override; \
     virtual bool get_bytes(uint8_t *buff, size_t size, unsigned long timeout) override; \
     virtual bool put_bytes(uint8_t *data, size_t size, unsigned long timeout) override; \
-    virtual void begin() override { Serial##name.begin(__baudrate); } \
-    virtual void end() override { Serial##name.end(); } \
+    virtual void begin() override { port.begin(__baudrate); } \
+    virtual void end() override { port.end(); } \
 private: \
     unsigned long __baudrate; \
     rpc_hardware_serial##name##_uart_slave(const rpc_hardware_serial##name##_uart_slave &); \
 };
 
 #ifdef SERIAL_PORT_HARDWARE
-RPC_HARDWARE_SERIAL_UART_SLAVE()
+RPC_HARDWARE_SERIAL_UART_SLAVE(,SERIAL_PORT_HARDWARE)
 #endif
 
 #ifdef SERIAL_PORT_HARDWARE1
-RPC_HARDWARE_SERIAL_UART_SLAVE(1)
+RPC_HARDWARE_SERIAL_UART_SLAVE(1,SERIAL_PORT_HARDWARE1)
 #endif
 
 #ifdef SERIAL_PORT_HARDWARE2
-RPC_HARDWARE_SERIAL_UART_SLAVE(2)
+RPC_HARDWARE_SERIAL_UART_SLAVE(2,SERIAL_PORT_HARDWARE2)
 #endif
 
 #ifdef SERIAL_PORT_HARDWARE3
-RPC_HARDWARE_SERIAL_UART_SLAVE(3)
+RPC_HARDWARE_SERIAL_UART_SLAVE(3,SERIAL_PORT_HARDWARE3)
 #endif
 
 #ifdef SERIAL_PORT_USBVIRTUAL
-RPC_HARDWARE_SERIAL_UART_SLAVE(USB)
+RPC_HARDWARE_SERIAL_UART_SLAVE(USB,SERIAL_PORT_USBVIRTUAL)
 #endif
+
+#undef RPC_HARDWARE_SERIAL_UART_SLAVE
 
 #ifdef ARDUINO_ARCH_AVR
 class rpc_software_serial_uart_master : public rpc_master
@@ -392,7 +396,7 @@ public:
 private:
     long __baudrate;
     SoftwareSerial __serial;
-    rpc_software_serial_uart_master(const rpc_software_serial_uart_master &);   
+    rpc_software_serial_uart_master(const rpc_software_serial_uart_master &);
 };
 
 class rpc_software_serial_uart_slave : public rpc_slave
@@ -407,7 +411,7 @@ public:
 private:
     long __baudrate;
     SoftwareSerial __serial;
-    rpc_software_serial_uart_slave(const rpc_software_serial_uart_slave &);   
+    rpc_software_serial_uart_slave(const rpc_software_serial_uart_slave &);
 };
 #endif // ARDUINO_ARCH_AVR
 
