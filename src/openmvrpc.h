@@ -8,7 +8,9 @@
 #define __OPENMVRPC__
 
 #include <Arduino.h>
+#ifndef ARDUINO_ARCH_ESP8266
 #include <CAN.h>
+#endif
 #ifdef ARDUINO_ARCH_AVR
 #include <SoftwareSerial.h>
 #endif // ARDUINO_ARCH_AVR
@@ -215,6 +217,7 @@ private:
     bool __register_callback(uint32_t hash, rpc_callback_type_t type, void *value);
 };
 
+#ifndef ARDUINO_ARCH_ESP8266
 class rpc_can_master : public rpc_master
 {
 public:
@@ -248,6 +251,7 @@ private:
     long __bit_rate;
     rpc_can_slave(const rpc_can_slave &);
 };
+#endif
 
 class rpc_i2c_master : public rpc_master
 {
@@ -276,7 +280,9 @@ public:
     virtual bool get_bytes(uint8_t *buff, size_t size, unsigned long timeout) override;
     virtual bool put_bytes(uint8_t *data, size_t size, unsigned long timeout) override;
     virtual void begin() override { Wire.onReceive(onReceiveHandler); Wire.onRequest(onRequestHandler); Wire.begin(__slave_addr); }
+#if (!defined(ARDUINO_ARCH_ESP32)) && (!defined(ARDUINO_ARCH_ESP8266))
     virtual void end() override { Wire.end(); }
+#endif
 protected:
     virtual uint32_t _stream_writer_queue_depth_max() override { return 1; }
 private:

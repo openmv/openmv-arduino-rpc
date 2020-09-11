@@ -27,6 +27,14 @@
 // Master <-- Slave magic DATA ack, n-byte payload, CRC
 //
 
+#ifndef min
+#define min(a,b) ((a)<(b)?(a):(b))
+#endif
+
+#ifndef max
+#define max(a,b) ((a)>(b)?(a):(b))
+#endif
+
 using namespace openmv;
 
 uint8_t *openmv::__buff = NULL;
@@ -669,6 +677,7 @@ bool rpc_slave::loop(unsigned long recv_timeout, unsigned long send_timeout)
     return false;
 }
 
+#ifndef ARDUINO_ARCH_ESP8266
 void rpc_can_master::_flush()
 {
     for (int i = 0, ii = CAN.parsePacket(); i < ii; i++) CAN.read();
@@ -740,6 +749,7 @@ bool rpc_can_slave::put_bytes(uint8_t *data, size_t size, unsigned long timeout)
 
     return i == size;
 }
+#endif
 
 void rpc_i2c_master::_flush()
 {
@@ -763,7 +773,9 @@ bool rpc_i2c_master::get_bytes(uint8_t *buff, size_t size, unsigned long timeout
         for (size_t j = 0; j < request_size; j++) buff[i+j] = Wire.read();
     }
 
+#if (!defined(ARDUINO_ARCH_ESP32)) && (!defined(ARDUINO_ARCH_ESP8266))
     Wire.end();
+#endif
     if (ok) ok = ok && (!_same(buff, size));
     if (!ok) delay(_get_short_timeout);
     return ok;
@@ -786,7 +798,9 @@ bool rpc_i2c_master::put_bytes(uint8_t *data, size_t size, unsigned long timeout
         if ((Wire.write(data + i, request_size) != request_size) || Wire.endTransmission(request_stop)) { ok = false; break; }
     }
 
+#if (!defined(ARDUINO_ARCH_ESP32)) && (!defined(ARDUINO_ARCH_ESP8266))
     Wire.end();
+#endif
     return ok;
 }
 
