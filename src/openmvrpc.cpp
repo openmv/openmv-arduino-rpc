@@ -677,7 +677,7 @@ bool rpc_slave::loop(unsigned long recv_timeout, unsigned long send_timeout)
     return false;
 }
 
-#ifndef ARDUINO_ARCH_ESP8266
+#if !defined(ARDUINO_ARCH_ESP8266) && !defined(ARDUINO_ARCH_NRF52840)
 void rpc_can_master::_flush()
 {
     for (int i = 0, ii = CAN.parsePacket(); i < ii; i++) CAN.read();
