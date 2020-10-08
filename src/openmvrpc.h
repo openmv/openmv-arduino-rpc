@@ -288,7 +288,7 @@ protected:
 private:
     uint8_t __slave_addr;
     static volatile uint8_t *__bytes_buff;
-    static volatile size_t __bytes_size;
+    static volatile int __bytes_size;
     static void onReceiveHandler(int numBytes);
     static void onRequestHandler();
     rpc_i2c_slave(const rpc_i2c_slave &);

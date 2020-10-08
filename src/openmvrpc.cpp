@@ -805,7 +805,7 @@ bool rpc_i2c_master::put_bytes(uint8_t *data, size_t size, unsigned long timeout
 }
 
 volatile uint8_t *rpc_i2c_slave::__bytes_buff = NULL;
-volatile size_t rpc_i2c_slave::__bytes_size = 0;
+volatile int rpc_i2c_slave::__bytes_size = 0;
 
 void rpc_i2c_slave::onReceiveHandler(int numBytes)
 {
@@ -818,7 +818,7 @@ void rpc_i2c_slave::onReceiveHandler(int numBytes)
 void rpc_i2c_slave::onRequestHandler()
 {
     if (!__bytes_size) return;
-    size_t written = Wire.write((const uint8_t *) __bytes_buff, min(__bytes_size, 32));
+    size_t written = Wire.write((uint8_t *) __bytes_buff, min(__bytes_size, 32));
     __bytes_buff += written;
     __bytes_size -= written;
 }
