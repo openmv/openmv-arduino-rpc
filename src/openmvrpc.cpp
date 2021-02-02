@@ -751,58 +751,63 @@ bool rpc_can_slave::put_bytes(uint8_t *data, size_t size, unsigned long timeout)
 }
 #endif
 
-void rpc_i2c_master::_flush()
-{
-    for (int i = Wire.available(); i > 0; i--) Wire.read();
+#define RPC_I2C_MASTER_IMPLEMENTATION(name, port) \
+void rpc_i2c##name##_master::_flush() \
+{ \
+    for (int i = port.available(); i > 0; i--) port.read(); \
+} \
+\ 
+bool rpc_i2c##name##_master::get_bytes(uint8_t *buff, size_t size, unsigned long timeout) \
+{ \
+    (void) timeout; \
+    bool ok = true; \
+    port.begin(); \
+    port.setClock(__rate); \
+\
+    for (size_t i = 0; i < size; i += 32) { \
+        size_t size_remaining = size - i; \
+        uint8_t request_size = min(size_remaining, 32); \
+        uint8_t request_stop = size_remaining <= 32; \
+        delayMicroseconds(100); \
+        if (port.requestFrom(__slave_addr, request_size, request_stop) != request_size) { ok = false; break; } \
+        for (size_t j = 0; j < request_size; j++) buff[i+j] = port.read(); \
+    } \
+\
+    port.end(); \
+    if (ok) ok = ok && (!_same(buff, size)); \
+    if (!ok) delay(_get_short_timeout); \
+    return ok; \
+} \
+\
+bool rpc_i2c##name##_master::put_bytes(uint8_t *data, size_t size, unsigned long timeout) \
+{ \
+\
+    (void) timeout; \
+    bool ok = true; \
+    port.begin(); \
+    port.setClock(__rate); \
+\
+    for (size_t i = 0; i < size; i += 32) { \
+        size_t size_remaining = size - i; \
+        uint8_t request_size = min(size_remaining, 32); \
+        uint8_t request_stop = size_remaining <= 32; \
+        delayMicroseconds(100); \
+        port.beginTransmission(__slave_addr); \
+        if ((port.write(data + i, request_size) != request_size) || port.endTransmission(request_stop)) { ok = false; break; } \
+    } \
+\
+    port.end(); \
+    return ok; \
 }
 
-bool rpc_i2c_master::get_bytes(uint8_t *buff, size_t size, unsigned long timeout)
-{
-    // Turn the bus on and off so as to prevent lockups.
-    (void) timeout;
-    bool ok = true;
-    Wire.begin();
-    Wire.setClock(__rate);
-
-    for (size_t i = 0; i < size; i += 32) {
-        size_t size_remaining = size - i;
-        uint8_t request_size = min(size_remaining, 32);
-        uint8_t request_stop = size_remaining <= 32;
-        delayMicroseconds(100); // Give slave time to get ready
-        if (Wire.requestFrom(__slave_addr, request_size, request_stop) != request_size) { ok = false; break; }
-        for (size_t j = 0; j < request_size; j++) buff[i+j] = Wire.read();
-    }
-
-#if (!defined(ARDUINO_ARCH_ESP32)) && (!defined(ARDUINO_ARCH_ESP8266))
-    Wire.end();
+#if WIRE_HOWMANY > 0
+RPC_I2C_MASTER_IMPLEMENTATION(,Wire)
 #endif
-    if (ok) ok = ok && (!_same(buff, size));
-    if (!ok) delay(_get_short_timeout);
-    return ok;
-}
 
-bool rpc_i2c_master::put_bytes(uint8_t *data, size_t size, unsigned long timeout)
-{
-    // Turn the bus on and off so as to prevent lockups.
-    (void) timeout;
-    bool ok = true;
-    Wire.begin();
-    Wire.setClock(__rate);
-
-    for (size_t i = 0; i < size; i += 32) {
-        size_t size_remaining = size - i;
-        uint8_t request_size = min(size_remaining, 32);
-        uint8_t request_stop = size_remaining <= 32;
-        delayMicroseconds(100); // Give slave time to get ready
-        Wire.beginTransmission(__slave_addr);
-        if ((Wire.write(data + i, request_size) != request_size) || Wire.endTransmission(request_stop)) { ok = false; break; }
-    }
-
-#if (!defined(ARDUINO_ARCH_ESP32)) && (!defined(ARDUINO_ARCH_ESP8266))
-    Wire.end();
+#if WIRE_HOWMANY > 1
+RPC_I2C_MASTER_IMPLEMENTATION(1,Wire1)
 #endif
-    return ok;
-}
+
 
 volatile uint8_t *rpc_i2c_slave::__bytes_buff = NULL;
 volatile int rpc_i2c_slave::__bytes_size = 0;

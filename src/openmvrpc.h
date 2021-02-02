@@ -253,23 +253,32 @@ private:
 };
 #endif
 
-class rpc_i2c_master : public rpc_master
-{
-public:
-    rpc_i2c_master(uint8_t slave_addr=0x12, uint32_t rate=100000) : rpc_master(), __slave_addr(slave_addr), __rate(rate) {}
-    ~rpc_i2c_master() {}
-    virtual void _flush() override;
-    virtual bool get_bytes(uint8_t *buff, size_t size, unsigned long timeout) override;
-    virtual bool put_bytes(uint8_t *data, size_t size, unsigned long timeout) override;
-    void set_slave_addr(uint8_t slave_addr) { __slave_addr = slave_addr; }
-    uint8_t get_slave_addr() { return __slave_addr; }
-protected:
-    virtual uint32_t _stream_writer_queue_depth_max() override { return 1; }
-private:
-    uint8_t __slave_addr;
-    uint32_t __rate;
-    rpc_i2c_master(const rpc_i2c_master &);
+#define RPC_I2C_MASTER(name, port) \
+class rpc_i2c##name##_master : public rpc_master \
+{ \
+public: \
+    rpc_i2c##name##_master(uint8_t slave_addr=0x12, uint32_t rate=100000) : rpc_master(), __slave_addr(slave_addr), __rate(rate) {} \
+    ~rpc_i2c##name##_master() {} \
+    virtual void _flush() override; \
+    virtual bool get_bytes(uint8_t *buff, size_t size, unsigned long timeout) override; \
+    virtual bool put_bytes(uint8_t *data, size_t size, unsigned long timeout) override; \
+    void set_slave_addr(uint8_t slave_addr) { __slave_addr = slave_addr; } \
+    uint8_t get_slave_addr() { return __slave_addr; } \
+protected: \
+    virtual uint32_t _stream_writer_queue_depth_max() override { return 1; } \
+private: \
+    uint8_t __slave_addr; \
+    uint32_t __rate; \
+    rpc_i2c##name##_master(const rpc_i2c##name##_master &); \
 };
+
+#if WIRE_HOWMANY > 0
+RPC_I2C_MASTER(,Wire)
+#endif
+
+#if WIRE_HOWMANY > 1
+RPC_I2C_MASTER(1,Wire1)
+#endif
 
 class rpc_i2c_slave : public rpc_slave
 {
