@@ -279,7 +279,7 @@ public:
     virtual void _flush() override;
     virtual bool get_bytes(uint8_t *buff, size_t size, unsigned long timeout) override;
     virtual bool put_bytes(uint8_t *data, size_t size, unsigned long timeout) override;
-    virtual void begin() override { Wire.onReceive(onReceiveHandler); Wire.onRequest(onRequestHandler); Wire.begin(__slave_addr); }
+    virtual void begin() override { Wire.begin(__slave_addr); Wire.onReceive(onReceiveHandler); Wire.onRequest(onRequestHandler); }
 #if (!defined(ARDUINO_ARCH_ESP32)) && (!defined(ARDUINO_ARCH_ESP8266))
     virtual void end() override { Wire.end(); }
 #endif
