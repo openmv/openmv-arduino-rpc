@@ -677,7 +677,7 @@ bool rpc_slave::loop(unsigned long recv_timeout, unsigned long send_timeout)
     return false;
 }
 
-#if !defined(ARDUINO_ARCH_ESP8266) && !defined(ARDUINO_ARCH_NRF52840)
+#if !defined(ARDUINO_ARCH_ESP8266) && !defined(ARDUINO_ARCH_NRF52840) && !defined(ARDUINO_ARCH_MBED)
 void rpc_can_master::_flush()
 {
     for (int i = 0, ii = CAN.parsePacket(); i < ii; i++) CAN.read();
@@ -751,12 +751,14 @@ bool rpc_can_slave::put_bytes(uint8_t *data, size_t size, unsigned long timeout)
 }
 #endif
 
+#if (!defined(ARDUINO_ARCH_ESP32)) && (!defined(ARDUINO_ARCH_ESP8266))
+
 #define RPC_I2C_MASTER_IMPLEMENTATION(name, port) \
 void rpc_i2c##name##_master::_flush() \
 { \
     for (int i = port.available(); i > 0; i--) port.read(); \
 } \
-\ 
+\
 bool rpc_i2c##name##_master::get_bytes(uint8_t *buff, size_t size, unsigned long timeout) \
 { \
     (void) timeout; \
@@ -800,81 +802,165 @@ bool rpc_i2c##name##_master::put_bytes(uint8_t *data, size_t size, unsigned long
     return ok; \
 }
 
-#if WIRE_HOWMANY > 0
-RPC_I2C_MASTER_IMPLEMENTATION(,Wire)
+#else
+
+#define RPC_I2C_MASTER_IMPLEMENTATION(name, port) \
+void rpc_i2c##name##_master::_flush() \
+{ \
+    for (int i = port.available(); i > 0; i--) port.read(); \
+} \
+\
+bool rpc_i2c##name##_master::get_bytes(uint8_t *buff, size_t size, unsigned long timeout) \
+{ \
+    (void) timeout; \
+    bool ok = true; \
+    port.begin(); \
+    port.setClock(__rate); \
+\
+    for (size_t i = 0; i < size; i += 32) { \
+        size_t size_remaining = size - i; \
+        uint8_t request_size = min(size_remaining, 32); \
+        uint8_t request_stop = size_remaining <= 32; \
+        delayMicroseconds(100); \
+        if (port.requestFrom(__slave_addr, request_size, request_stop) != request_size) { ok = false; break; } \
+        for (size_t j = 0; j < request_size; j++) buff[i+j] = port.read(); \
+    } \
+\
+    if (ok) ok = ok && (!_same(buff, size)); \
+    if (!ok) delay(_get_short_timeout); \
+    return ok; \
+} \
+\
+bool rpc_i2c##name##_master::put_bytes(uint8_t *data, size_t size, unsigned long timeout) \
+{ \
+\
+    (void) timeout; \
+    bool ok = true; \
+    port.begin(); \
+    port.setClock(__rate); \
+\
+    for (size_t i = 0; i < size; i += 32) { \
+        size_t size_remaining = size - i; \
+        uint8_t request_size = min(size_remaining, 32); \
+        uint8_t request_stop = size_remaining <= 32; \
+        delayMicroseconds(100); \
+        port.beginTransmission(__slave_addr); \
+        if ((port.write(data + i, request_size) != request_size) || port.endTransmission(request_stop)) { ok = false; break; } \
+    } \
+\
+    return ok; \
+}
+
 #endif
+
+RPC_I2C_MASTER_IMPLEMENTATION(,Wire)
 
 #if WIRE_HOWMANY > 1
 RPC_I2C_MASTER_IMPLEMENTATION(1,Wire1)
 #endif
 
+#undef RPC_I2C_MASTER_IMPLEMENTATION
 
-volatile uint8_t *rpc_i2c_slave::__bytes_buff = NULL;
-volatile int rpc_i2c_slave::__bytes_size = 0;
-
-void rpc_i2c_slave::onReceiveHandler(int numBytes)
-{
-    if (!__bytes_size) return;
-    for (int i = 0, j = min(__bytes_size, numBytes); i < j; i++) __bytes_buff[i] = Wire.read();
-    __bytes_buff += numBytes;
-    __bytes_size -= numBytes;
+#define RPC_I2C_SLAVE_IMPLEMENTATION(name, port) \
+volatile uint8_t *rpc_i2c##name##_slave::__bytes_buff = NULL; \
+volatile int rpc_i2c##name##_slave::__bytes_size = 0; \
+\
+void rpc_i2c##name##_slave::onReceiveHandler(int numBytes) \
+{ \
+    if (!__bytes_size) return; \
+    for (int i = 0, j = min(__bytes_size, numBytes); i < j; i++) __bytes_buff[i] = port.read(); \
+    __bytes_buff += numBytes; \
+    __bytes_size -= numBytes; \
+} \
+\
+void rpc_i2c##name##_slave::onRequestHandler() \
+{ \
+    if (!__bytes_size) return; \
+    size_t written = port.write((uint8_t *) __bytes_buff, min(__bytes_size, 32)); \
+    __bytes_buff += written; \
+    __bytes_size -= written; \
+} \
+\
+void rpc_i2c##name##_slave::_flush() \
+{ \
+    for (int i = port.available(); i > 0; i--) port.read(); \
+} \
+\
+bool rpc_i2c##name##_slave::get_bytes(uint8_t *buff, size_t size, unsigned long timeout) \
+{ \
+    __bytes_buff = buff; \
+    __bytes_size = size; \
+    unsigned long start = millis(); \
+    while (((millis() - start) <= timeout) && __bytes_size); \
+    bool ok = !__bytes_size; \
+    __bytes_size = 0; \
+    return ok; \
+} \
+\
+bool rpc_i2c##name##_slave::put_bytes(uint8_t *data, size_t size, unsigned long timeout) \
+{ \
+    __bytes_buff = data; \
+    __bytes_size = size; \
+    unsigned long start = millis(); \
+    while (((millis() - start) <= timeout) && __bytes_size); \
+    bool ok = !__bytes_size; \
+    __bytes_size = 0; \
+    return ok; \
 }
 
-void rpc_i2c_slave::onRequestHandler()
-{
-    if (!__bytes_size) return;
-    size_t written = Wire.write((uint8_t *) __bytes_buff, min(__bytes_size, 32));
-    __bytes_buff += written;
-    __bytes_size -= written;
+RPC_I2C_SLAVE_IMPLEMENTATION(,Wire)
+
+#if WIRE_HOWMANY > 1
+RPC_I2C_SLAVE_IMPLEMENTATION(1,Wire1)
+#endif
+
+#if WIRE_HOWMANY > 2
+RPC_I2C_SLAVE_IMPLEMENTATION(2,Wire2)
+#endif
+
+#if WIRE_HOWMANY > 3
+RPC_I2C_SLAVE_IMPLEMENTATION(3,Wire3)
+#endif
+
+#undef RPC_I2C_SLAVE_IMPLEMENTATION
+
+#define RPC_SPI_MASTER_IMPLEMENTATION(name, port) \
+bool rpc_spi##name##_master::get_bytes(uint8_t *buff, size_t size, unsigned long timeout) \
+{ \
+    put_bytes(buff, size, timeout); \
+    bool ok = !_same(buff, size); \
+    if (!ok) delay(_get_short_timeout); \
+    return ok; \
+} \
+\
+bool rpc_spi##name##_master::put_bytes(uint8_t *data, size_t size, unsigned long timeout) \
+{ \
+    (void) timeout; \
+\
+    digitalWrite(__cs_pin, LOW); \
+    delayMicroseconds(100); /* Give slave time to get ready */ \
+    port.beginTransaction(__settings); \
+    port.transfer(data, size); \
+    port.endTransaction(); \
+    digitalWrite(__cs_pin, HIGH); \
+    return true; \
 }
 
-void rpc_i2c_slave::_flush()
-{
-    for (int i = Wire.available(); i > 0; i--) Wire.read();
-}
+RPC_SPI_MASTER_IMPLEMENTATION(,SPI)
 
-bool rpc_i2c_slave::get_bytes(uint8_t *buff, size_t size, unsigned long timeout)
-{
-    __bytes_buff = buff;
-    __bytes_size = size;
-    unsigned long start = millis();
-    while (((millis() - start) <= timeout) && __bytes_size);
-    bool ok = !__bytes_size;
-    __bytes_size = 0;
-    return ok;
-}
+#if SPI_HOWMANY > 1
+RPC_SPI_MASTER_IMPLEMENTATION(1,SPI1)
+#endif
 
-bool rpc_i2c_slave::put_bytes(uint8_t *data, size_t size, unsigned long timeout)
-{
-    __bytes_buff = data;
-    __bytes_size = size;
-    unsigned long start = millis();
-    while (((millis() - start) <= timeout) && __bytes_size);
-    bool ok = !__bytes_size;
-    __bytes_size = 0;
-    return ok;
-}
+#if SPI_HOWMANY > 2
+RPC_SPI_MASTER_IMPLEMENTATION(2,SPI2)
+#endif
 
-bool rpc_spi_master::get_bytes(uint8_t *buff, size_t size, unsigned long timeout)
-{
-    put_bytes(buff, size, timeout);
-    bool ok = !_same(buff, size);
-    if (!ok) delay(_get_short_timeout);
-    return ok;
-}
+#if SPI_HOWMANY > 3
+RPC_SPI_MASTER_IMPLEMENTATION(3,SPI3)
+#endif
 
-bool rpc_spi_master::put_bytes(uint8_t *data, size_t size, unsigned long timeout)
-{
-    (void) timeout;
-
-    digitalWrite(__cs_pin, LOW);
-    delayMicroseconds(100); // Give slave time to get ready
-    SPI.beginTransaction(__settings);
-    SPI.transfer(data, size);
-    SPI.endTransaction();
-    digitalWrite(__cs_pin, HIGH);
-    return true;
-}
+#undef RPC_SPI_MASTER_IMPLEMENTATION
 
 #define RPC_HARDWARE_SERIAL_UART_MASTER_IMPLEMENTATION(name, port) \
 void rpc_hardware_serial##name##_uart_master::_flush() \
@@ -895,6 +981,26 @@ bool rpc_hardware_serial##name##_uart_master::put_bytes(uint8_t *buff, size_t si
     (void) timeout; \
     return port.write((char *) buff, size) == size; \
 }
+
+#ifdef SERIAL_HOWMANY
+
+#if SERIAL_HOWMANY > 0
+RPC_HARDWARE_SERIAL_UART_MASTER_IMPLEMENTATION(1,Serial1)
+#endif
+
+#if SERIAL_HOWMANY > 1
+RPC_HARDWARE_SERIAL_UART_MASTER_IMPLEMENTATION(2,Serial2)
+#endif
+
+#if SERIAL_HOWMANY > 2
+RPC_HARDWARE_SERIAL_UART_MASTER_IMPLEMENTATION(3,Serial3)
+#endif
+
+#if SERIAL_HOWMANY > 3
+RPC_HARDWARE_SERIAL_UART_MASTER_IMPLEMENTATION(4,Serial4)
+#endif
+
+#else
 
 #ifdef SERIAL_PORT_HARDWARE
 RPC_HARDWARE_SERIAL_UART_MASTER_IMPLEMENTATION(,SERIAL_PORT_HARDWARE)
@@ -928,6 +1034,8 @@ RPC_HARDWARE_SERIAL_UART_MASTER_IMPLEMENTATION(6,SERIAL_PORT_HARDWARE6)
 RPC_HARDWARE_SERIAL_UART_MASTER_IMPLEMENTATION(7,SERIAL_PORT_HARDWARE7)
 #endif
 
+#endif
+
 #ifdef SERIAL_PORT_USBVIRTUAL
 RPC_HARDWARE_SERIAL_UART_MASTER_IMPLEMENTATION(USB,SERIAL_PORT_USBVIRTUAL)
 #endif
@@ -951,6 +1059,26 @@ bool rpc_hardware_serial##name##_uart_slave::put_bytes(uint8_t *buff, size_t siz
     (void) timeout; \
     return port.write((char *) buff, size) == size; \
 }
+
+#ifdef SERIAL_HOWMANY
+
+#if SERIAL_HOWMANY > 0
+RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION(1,Serial1)
+#endif
+
+#if SERIAL_HOWMANY > 1
+RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION(2,Serial2)
+#endif
+
+#if SERIAL_HOWMANY > 2
+RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION(3,Serial3)
+#endif
+
+#if SERIAL_HOWMANY > 3
+RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION(4,Serial4)
+#endif
+
+#else
 
 #ifdef SERIAL_PORT_HARDWARE
 RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION(,SERIAL_PORT_HARDWARE)
@@ -982,6 +1110,8 @@ RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION(6,SERIAL_PORT_HARDWARE6)
 
 #ifdef SERIAL_PORT_HARDWARE7
 RPC_HARDWARE_SERIAL_UART_SLAVE_IMPLEMENTATION(7,SERIAL_PORT_HARDWARE7)
+#endif
+
 #endif
 
 #ifdef SERIAL_PORT_USBVIRTUAL

@@ -8,7 +8,7 @@
 #define __OPENMVRPC__
 
 #include <Arduino.h>
-#if !defined(ARDUINO_ARCH_ESP8266) && !defined(ARDUINO_ARCH_NRF52840)
+#if !defined(ARDUINO_ARCH_ESP8266) && !defined(ARDUINO_ARCH_NRF52840) && !defined(ARDUINO_ARCH_MBED)
 #include <CAN.h>
 #endif
 #ifdef ARDUINO_ARCH_AVR
@@ -217,7 +217,7 @@ private:
     bool __register_callback(uint32_t hash, rpc_callback_type_t type, void *value);
 };
 
-#if !defined(ARDUINO_ARCH_ESP8266) && !defined(ARDUINO_ARCH_NRF52840)
+#if !defined(ARDUINO_ARCH_ESP8266) && !defined(ARDUINO_ARCH_NRF52840) && !defined(ARDUINO_ARCH_MBED)
 class rpc_can_master : public rpc_master
 {
 public:
@@ -272,55 +272,122 @@ private: \
     rpc_i2c##name##_master(const rpc_i2c##name##_master &); \
 };
 
-#if WIRE_HOWMANY > 0
 RPC_I2C_MASTER(,Wire)
-#endif
 
 #if WIRE_HOWMANY > 1
 RPC_I2C_MASTER(1,Wire1)
 #endif
 
-class rpc_i2c_slave : public rpc_slave
-{
-public:
-    rpc_i2c_slave(uint8_t slave_addr=0x12) : rpc_slave(), __slave_addr(slave_addr) {}
-    ~rpc_i2c_slave() {}
-    virtual void _flush() override;
-    virtual bool get_bytes(uint8_t *buff, size_t size, unsigned long timeout) override;
-    virtual bool put_bytes(uint8_t *data, size_t size, unsigned long timeout) override;
-    virtual void begin() override { Wire.begin(__slave_addr); Wire.onReceive(onReceiveHandler); Wire.onRequest(onRequestHandler); }
-#if (!defined(ARDUINO_ARCH_ESP32)) && (!defined(ARDUINO_ARCH_ESP8266))
-    virtual void end() override { Wire.end(); }
+#if WIRE_HOWMANY > 2
+RPC_I2C_MASTER(2,Wire2)
 #endif
-protected:
-    virtual uint32_t _stream_writer_queue_depth_max() override { return 1; }
-private:
-    uint8_t __slave_addr;
-    static volatile uint8_t *__bytes_buff;
-    static volatile int __bytes_size;
-    static void onReceiveHandler(int numBytes);
-    static void onRequestHandler();
-    rpc_i2c_slave(const rpc_i2c_slave &);
+
+#if WIRE_HOWMANY > 3
+RPC_I2C_MASTER(3,Wire3)
+#endif
+
+#undef RPC_I2C_MASTER
+
+#if (!defined(ARDUINO_ARCH_ESP32)) && (!defined(ARDUINO_ARCH_ESP8266))
+
+#define RPC_I2C_SLAVE(name, port) \
+class rpc_i2c##name##_slave : public rpc_slave \
+{ \
+public: \
+    rpc_i2c##name##_slave(uint8_t slave_addr=0x12) : rpc_slave(), __slave_addr(slave_addr) {} \
+    ~rpc_i2c##name##_slave() {} \
+    virtual void _flush() override; \
+    virtual bool get_bytes(uint8_t *buff, size_t size, unsigned long timeout) override; \
+    virtual bool put_bytes(uint8_t *data, size_t size, unsigned long timeout) override; \
+    virtual void begin() override { port.begin(__slave_addr); port.onReceive(onReceiveHandler); port.onRequest(onRequestHandler); } \
+    virtual void end() override { port.end(); } \
+protected: \
+    virtual uint32_t _stream_writer_queue_depth_max() override { return 1; } \
+private: \
+    uint8_t __slave_addr; \
+    static volatile uint8_t *__bytes_buff; \
+    static volatile int __bytes_size; \
+    static void onReceiveHandler(int numBytes); \
+    static void onRequestHandler(); \
+    rpc_i2c##name##_slave(const rpc_i2c##name##_slave &); \
 };
 
-class rpc_spi_master : public rpc_master
-{
-public:
-    rpc_spi_master(uint8_t cs_pin, uint32_t freq=1000000, uint8_t spi_mode=SPI_MODE2) : rpc_master(), __cs_pin(cs_pin), __settings(freq, MSBFIRST, spi_mode) {}
-    ~rpc_spi_master() {}
-    virtual bool get_bytes(uint8_t *buff, size_t size, unsigned long timeout) override;
-    virtual bool put_bytes(uint8_t *data, size_t size, unsigned long timeout) override;
-    virtual void begin() override { digitalWrite(__cs_pin, HIGH); pinMode(__cs_pin, OUTPUT); SPI.begin(); }
-    virtual void end() override { SPI.end(); }
-    void set_cs_pin(uint8_t cs_pin) { pinMode(__cs_pin, INPUT); digitalWrite(__cs_pin, LOW); __cs_pin = cs_pin; digitalWrite(__cs_pin, HIGH); pinMode(__cs_pin, OUTPUT); }
-    uint8_t get_cs_pin() { return __cs_pin; }
-protected:
-    virtual uint32_t _stream_writer_queue_depth_max() override { return 1; }
-private:
-    uint8_t __cs_pin;
-    SPISettings __settings;
-    rpc_spi_master(const rpc_spi_master &);
+#else
+
+#define RPC_I2C_SLAVE(name, port) \
+class rpc_i2c##name##_slave : public rpc_slave \
+{ \
+public: \
+    rpc_i2c##name##_slave(uint8_t slave_addr=0x12) : rpc_slave(), __slave_addr(slave_addr) {} \
+    ~rpc_i2c##name##_slave() {} \
+    virtual void _flush() override; \
+    virtual bool get_bytes(uint8_t *buff, size_t size, unsigned long timeout) override; \
+    virtual bool put_bytes(uint8_t *data, size_t size, unsigned long timeout) override; \
+    virtual void begin() override { port.begin(__slave_addr); port.onReceive(onReceiveHandler); port.onRequest(onRequestHandler); } \
+protected: \
+    virtual uint32_t _stream_writer_queue_depth_max() override { return 1; } \
+private: \
+    uint8_t __slave_addr; \
+    static volatile uint8_t *__bytes_buff; \
+    static volatile int __bytes_size; \
+    static void onReceiveHandler(int numBytes); \
+    static void onRequestHandler(); \
+    rpc_i2c##name##_slave(const rpc_i2c##name##_slave &); \
 };
+
+#endif
+
+RPC_I2C_SLAVE(,Wire)
+
+#if WIRE_HOWMANY > 1
+RPC_I2C_SLAVE(1,Wire1)
+#endif
+
+#if WIRE_HOWMANY > 2
+RPC_I2C_SLAVE(2,Wire2)
+#endif
+
+#if WIRE_HOWMANY > 3
+RPC_I2C_SLAVE(3,Wire3)
+#endif
+
+#undef RPC_I2C_SLAVE
+
+#define RPC_SPI_MASTER(name, port) \
+class rpc_spi##name##_master : public rpc_master \
+{ \
+public: \
+    rpc_spi##name##_master(uint8_t cs_pin, uint32_t freq=1000000, uint8_t spi_mode=SPI_MODE2) : rpc_master(), __cs_pin(cs_pin), __settings(freq, MSBFIRST, spi_mode) {} \
+    ~rpc_spi##name##_master() {} \
+    virtual bool get_bytes(uint8_t *buff, size_t size, unsigned long timeout) override; \
+    virtual bool put_bytes(uint8_t *data, size_t size, unsigned long timeout) override; \
+    virtual void begin() override { digitalWrite(__cs_pin, HIGH); pinMode(__cs_pin, OUTPUT); port.begin(); } \
+    virtual void end() override { port.end(); } \
+    void set_cs_pin(uint8_t cs_pin) { pinMode(__cs_pin, INPUT); digitalWrite(__cs_pin, LOW); __cs_pin = cs_pin; digitalWrite(__cs_pin, HIGH); pinMode(__cs_pin, OUTPUT); } \
+    uint8_t get_cs_pin() { return __cs_pin; } \
+protected: \
+    virtual uint32_t _stream_writer_queue_depth_max() override { return 1; } \
+private: \
+    uint8_t __cs_pin; \
+    SPISettings __settings; \
+    rpc_spi##name##_master(const rpc_spi##name##_master &); \
+};
+
+RPC_SPI_MASTER(,SPI)
+
+#if SPI_HOWMANY > 1
+RPC_SPI_MASTER(1,SPI1)
+#endif
+
+#if SPI_HOWMANY > 2
+RPC_SPI_MASTER(2,SPI2)
+#endif
+
+#if SPI_HOWMANY > 3
+RPC_SPI_MASTER(3,SPI3)
+#endif
+
+#undef RPC_SPI_MASTER
 
 #define RPC_HARDWARE_SERIAL_UART_MASTER(name, port) \
 class rpc_hardware_serial##name##_uart_master : public rpc_master \
@@ -337,6 +404,26 @@ private: \
     unsigned long __baudrate; \
     rpc_hardware_serial##name##_uart_master(const rpc_hardware_serial##name##_uart_master &); \
 };
+
+#ifdef SERIAL_HOWMANY
+
+#if SERIAL_HOWMANY > 0
+RPC_HARDWARE_SERIAL_UART_MASTER(1,Serial1)
+#endif
+
+#if SERIAL_HOWMANY > 1
+RPC_HARDWARE_SERIAL_UART_MASTER(2,Serial2)
+#endif
+
+#if SERIAL_HOWMANY > 2
+RPC_HARDWARE_SERIAL_UART_MASTER(3,Serial3)
+#endif
+
+#if SERIAL_HOWMANY > 3
+RPC_HARDWARE_SERIAL_UART_MASTER(4,Serial4)
+#endif
+
+#else
 
 #ifdef SERIAL_PORT_HARDWARE
 RPC_HARDWARE_SERIAL_UART_MASTER(,SERIAL_PORT_HARDWARE)
@@ -370,6 +457,8 @@ RPC_HARDWARE_SERIAL_UART_MASTER(6,SERIAL_PORT_HARDWARE6)
 RPC_HARDWARE_SERIAL_UART_MASTER(7,SERIAL_PORT_HARDWARE7)
 #endif
 
+#endif
+
 #ifdef SERIAL_PORT_USBVIRTUAL
 RPC_HARDWARE_SERIAL_UART_MASTER(USB,SERIAL_PORT_USBVIRTUAL)
 #endif
@@ -391,6 +480,26 @@ private: \
     unsigned long __baudrate; \
     rpc_hardware_serial##name##_uart_slave(const rpc_hardware_serial##name##_uart_slave &); \
 };
+
+#ifdef SERIAL_HOWMANY
+
+#if SERIAL_HOWMANY > 0
+RPC_HARDWARE_SERIAL_UART_SLAVE(1,Serial1)
+#endif
+
+#if SERIAL_HOWMANY > 1
+RPC_HARDWARE_SERIAL_UART_SLAVE(2,Serial2)
+#endif
+
+#if SERIAL_HOWMANY > 2
+RPC_HARDWARE_SERIAL_UART_SLAVE(3,Serial3)
+#endif
+
+#if SERIAL_HOWMANY > 3
+RPC_HARDWARE_SERIAL_UART_SLAVE(4,Serial4)
+#endif
+
+#else
 
 #ifdef SERIAL_PORT_HARDWARE
 RPC_HARDWARE_SERIAL_UART_SLAVE(,SERIAL_PORT_HARDWARE)
@@ -422,6 +531,8 @@ RPC_HARDWARE_SERIAL_UART_SLAVE(6,SERIAL_PORT_HARDWARE6)
 
 #ifdef SERIAL_PORT_HARDWARE7
 RPC_HARDWARE_SERIAL_UART_SLAVE(7,SERIAL_PORT_HARDWARE7)
+#endif
+
 #endif
 
 #ifdef SERIAL_PORT_USBVIRTUAL
