@@ -1,3 +1,5 @@
+<img  width="480" src="https://raw.githubusercontent.com/openmv/openmv-media/master/logos/openmv-logo/logo.png">
+
 # OpenMV Arduino RPC Interface Library
 
 The rpc library allows you to connect your Arduino to your OpenMV Cam, another Arduino, or computer and execute remote procedure calls and stream data at the highest speeds possible over CAN, I2C, SPI, UART (Async Serial), and USB. It is designed to be robust and fault tolerant. It automatically can recover from wires coming loose, packet corruption, timeouts, and etc.
