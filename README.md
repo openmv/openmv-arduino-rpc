@@ -152,7 +152,7 @@ Note that the default `Serial` debug port shares the same I/O pins as `rpc_hardw
 
 This RPC library also supports creating Arduino RPC slaves so you can use the interface library for connecting Arduino's up to each other easily. However, in-order to support callback registration without dyanmic memory we have to create a callback buffer object:
 
-openmv::rpc_callback_buffer<8> callback_buffer;
+`openmv::rpc_callback_buffer<8> callback_buffer;`
 
 All RPC Slave Interfaces share the callback buffer space. The callback buffer stores up to X (the number in the brackets above) callbacks that are registered to a particular RPC Slave Interface. You may call `size_t buffer_size()` to get the maximum number of callbacks that will fit in the callback buffer, `size_t buffer_free()` to get how many slots are left, and `size_t buffer_used()` to get how many slots are in-use.
 
